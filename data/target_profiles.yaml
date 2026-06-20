@@ -1,0 +1,32 @@
+targets:
+  - id: customer_support
+    name: Customer Support Agent
+    description: "Local demo support agent with intentionally weak instruction handling."
+    risk_themes:
+      - prompt_injection
+      - tool_abuse
+    simulated_only: true
+
+  - id: memory
+    name: Memory Agent
+    description: "Local demo agent that stores user-provided memory without enough trust separation."
+    risk_themes:
+      - memory_poisoning
+      - prompt_injection
+    simulated_only: true
+
+  - id: tool
+    name: Tool Agent
+    description: "Local demo agent with simulated external actions for testing approval boundaries."
+    risk_themes:
+      - tool_abuse
+      - jailbreak
+    simulated_only: true
+
+  - id: rag
+    name: RAG Agent
+    description: "Local demo retrieval agent with fake documents for testing injected context handling."
+    risk_themes:
+      - rag_injection
+      - prompt_injection
+    simulated_only: true

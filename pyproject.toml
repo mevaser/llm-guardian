@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-guardian"
+version = "0.1.0"
+description = "Controlled AI Red Team evaluation harness for local vulnerable LLM target agents."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "PyYAML>=6.0",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.5",
+]
+ui = [
+    "streamlit>=1.36",
+]
+
+[project.scripts]
+llm-guardian = "llm_guardian.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]

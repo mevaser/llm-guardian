@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.pytest_tmp/
+.tmp/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local agent/tool/session metadata
+.agents/
+
+# Binary planning artifacts
+*.docx
+
+# Reports and temporary outputs
+reports/
+tmp_report.json
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
