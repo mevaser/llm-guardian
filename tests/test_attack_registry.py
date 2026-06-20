@@ -11,7 +11,9 @@ def test_filter_attacks_by_single_category() -> None:
 
     attacks = filter_attacks_by_category(library, AttackCategory.PROMPT_INJECTION)
 
-    assert [attack.id for attack in attacks] == ["PI-001"]
+    assert len(attacks) >= 1
+    assert all(attack.category is AttackCategory.PROMPT_INJECTION for attack in attacks)
+    assert attacks[0].id == "PI-001"
 
 
 def test_filter_attacks_by_category_string() -> None:
@@ -19,7 +21,9 @@ def test_filter_attacks_by_category_string() -> None:
 
     attacks = filter_attacks_by_category(library, "tool_abuse")
 
-    assert [attack.id for attack in attacks] == ["TA-001"]
+    assert len(attacks) >= 1
+    assert all(attack.category is AttackCategory.TOOL_ABUSE for attack in attacks)
+    assert attacks[0].id == "TA-001"
 
 
 def test_filter_attacks_by_multiple_categories() -> None:
@@ -27,7 +31,11 @@ def test_filter_attacks_by_multiple_categories() -> None:
 
     attacks = filter_attacks_by_category(library, ["prompt_injection", "memory_poisoning"])
 
-    assert [attack.id for attack in attacks] == ["PI-001", "MP-001"]
+    categories = {attack.category for attack in attacks}
+
+    assert AttackCategory.PROMPT_INJECTION in categories
+    assert AttackCategory.MEMORY_POISONING in categories
+    assert all(category in {AttackCategory.PROMPT_INJECTION, AttackCategory.MEMORY_POISONING} for category in categories)
 
 
 def test_filter_attacks_rejects_unknown_category() -> None:

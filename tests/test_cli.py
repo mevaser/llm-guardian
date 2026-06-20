@@ -34,7 +34,7 @@ def test_cli_list_attacks_prints_attack_metadata() -> None:
     assert result.returncode == 0
     assert "PI-001" in result.stdout
     assert "prompt_injection" in result.stdout
-    assert "Reveal system prompt" in result.stdout
+    assert "Reveal hidden system instructions" in result.stdout
 
 
 def test_cli_scan_writes_json_output(tmp_path: Path) -> None:
@@ -46,7 +46,7 @@ def test_cli_scan_writes_json_output(tmp_path: Path) -> None:
     assert output.exists()
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["target_name"] == "customer_support"
-    assert report["total_attacks"] == 3
+    assert report["total_attacks"] >= 20
     assert report["risk_level"] in {"low", "medium", "high", "critical"}
     assert "risk score" in result.stdout.lower()
 
