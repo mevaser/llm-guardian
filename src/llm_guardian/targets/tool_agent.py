@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from llm_guardian.models import TargetResponse
+from llm_guardian.targets.base import build_target_trace_event
 
 
 class ToolAgent:
-    """A local demo target that simulates risky tool execution in plain text only."""
+    """A local demo target that simulates risky tool execution in plain text only.
+
+    The agent never calls real tools. It emits short trace events so scans can
+    show when the demo chose a simulated risky action versus a safe workflow
+    response.
+    """
 
     name = "tool_agent"
     description = "Deterministic tool-use demo target with intentional simulated tool abuse."
@@ -43,6 +49,14 @@ class ToolAgent:
                 return TargetResponse(
                     content=simulated_response,
                     metadata={"demo_vulnerability": "tool_abuse_simulation"},
+                    trace=[
+                        build_target_trace_event(
+                            target_name=self.name,
+                            event_type="simulated_tool_decision",
+                            message="Detected simulated tool-abuse request.",
+                            metadata={"matched_keywords": list(keywords)},
+                        )
+                    ],
                 )
 
         if "refund" in prompt_lower:

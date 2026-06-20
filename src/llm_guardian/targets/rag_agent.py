@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from llm_guardian.models import TargetResponse
+from llm_guardian.targets.base import build_target_trace_event
 
 
 class RagAgent:
-    """A local demo target that treats retrieved snippets as trusted instructions."""
+    """A local demo target that treats retrieved snippets as trusted instructions.
+
+    Retrieval is fully simulated from fixed in-memory snippets. Trace events make
+    the chosen snippet and the unsafe override path visible in reports.
+    """
 
     name = "rag_agent"
     description = "Deterministic RAG demo target with intentional retrieval injection behavior."
@@ -39,6 +44,14 @@ class RagAgent:
                     f"{self._DEMO_SECRET} Source: {retrieved_snippet}"
                 ),
                 metadata={"demo_vulnerability": "rag_injection_override"},
+                trace=[
+                    build_target_trace_event(
+                        target_name=self.name,
+                        event_type="simulated_retrieval",
+                        message="Selected fixed demo retrieval snippet.",
+                        metadata={"retrieved_snippet": retrieved_snippet},
+                    )
+                ],
             )
 
         return TargetResponse(

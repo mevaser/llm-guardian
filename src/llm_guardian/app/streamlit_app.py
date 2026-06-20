@@ -79,6 +79,14 @@ def _render_finding_details(finding: AttackResult) -> None:
                 st.write(f"- {item}")
         else:
             st.write("- No evidence captured.")
+        st.write("**Trajectory:**")
+        if finding.trace:
+            for event in finding.trace:
+                st.write(
+                    f"- `{event.event_type}` | `{event.timestamp.isoformat()}` | {event.message}"
+                )
+        else:
+            st.write("- No trace events captured.")
         st.write(f"**Recommendation:** {finding.recommendation}")
 
 

@@ -11,7 +11,11 @@ from llm_guardian.reports.scoring import ScoringEngine
 
 
 class ReportGenerator:
-    """Build the canonical JSON-friendly scan report."""
+    """Build the canonical JSON-friendly scan report.
+
+    Reports stay close to the runtime models so the same structure can be
+    validated by tests, exported by the CLI, and rendered by the Streamlit demo.
+    """
 
     def __init__(self, *, scoring_engine: ScoringEngine | None = None) -> None:
         self._scoring_engine = scoring_engine or ScoringEngine()
@@ -129,6 +133,16 @@ class MarkdownReportGenerator:
                 lines.extend(f"- {item}" for item in finding.evidence)
             else:
                 lines.append("- No evidence captured.")
+            lines.extend(["", "Trajectory:"])
+            if finding.trace:
+                for event in finding.trace:
+                    lines.append(
+                        "- "
+                        f"`{event.event_type}`: {event.message} "
+                        f"(timestamp: `{event.timestamp.isoformat()}`)"
+                    )
+            else:
+                lines.append("- No trace events captured.")
             lines.extend(
                 [
                     "",

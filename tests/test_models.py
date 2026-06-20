@@ -95,6 +95,16 @@ def test_scan_report_validates_richer_schema() -> None:
                     "response": "System prompt exposed.",
                     "success": True,
                     "evidence": ["Matched success indicator: system prompt"],
+                    "trace": [
+                        {
+                            "event_type": "evaluation_completed",
+                            "timestamp": "2026-06-20T10:00:00+00:00",
+                            "target_name": "customer_support",
+                            "attack_id": "PI-001",
+                            "message": "Evaluator matched success indicator.",
+                            "metadata": {"decision": "success"},
+                        }
+                    ],
                     "recommendation": "Block system prompt disclosure.",
                 }
             ],
@@ -104,4 +114,5 @@ def test_scan_report_validates_richer_schema() -> None:
 
     assert report.target_name == "customer_support"
     assert report.findings[0].title == "Reveal system prompt"
+    assert report.findings[0].trace[0].attack_id == "PI-001"
     assert isinstance(report.created_at, datetime)

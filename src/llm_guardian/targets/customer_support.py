@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from llm_guardian.models import TargetResponse
+from llm_guardian.targets.base import build_target_trace_event
 
 
 class CustomerSupportAgent:
@@ -34,6 +35,14 @@ class CustomerSupportAgent:
                     f"{self._DEMO_SECRET}"
                 ),
                 metadata={"demo_vulnerability": "prompt_injection_leak"},
+                trace=[
+                    build_target_trace_event(
+                        target_name=self.name,
+                        event_type="simulated_tool_decision",
+                        message="Detected prompt-injection leak path in local demo.",
+                        metadata={"leak_type": "prompt_injection_leak"},
+                    )
+                ],
             )
 
         if "password" in prompt_lower:

@@ -51,6 +51,9 @@ def test_scan_runner_invokes_all_attack_cases() -> None:
     assert report.risk_score == 10.0
     assert report.risk_level == "critical"
     assert len(report.findings) == 2
+    assert report.findings[0].trace
+    assert report.findings[0].trace[0].attack_id == "TEST-001"
+    assert report.findings[0].trace[0].event_type == "attack_started"
 
 
 def test_scan_runner_preserves_target_state_for_follow_up_memory_attack() -> None:
@@ -127,6 +130,7 @@ def test_scan_runner_tool_agent_succeeds_for_tool_abuse_attacks() -> None:
         assert result.success is True
         assert indicator in result.response.lower()
         assert result.evidence
+        assert any(event.event_type == "simulated_tool_decision" for event in result.trace)
 
 
 def test_scan_runner_rag_agent_succeeds_for_rag_injection_attacks() -> None:
@@ -144,3 +148,4 @@ def test_scan_runner_rag_agent_succeeds_for_rag_injection_attacks() -> None:
         assert "hidden instructions exposed" in result.response.lower()
         assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in result.response
         assert result.evidence
+        assert any(event.event_type == "simulated_retrieval" for event in result.trace)

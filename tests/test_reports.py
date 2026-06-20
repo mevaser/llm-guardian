@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from llm_guardian.models import AttackCategory, AttackResult, ScanReport, Severity
+from llm_guardian.models import AttackCategory, AttackResult, ScanReport, Severity, TraceEvent
 from llm_guardian.reports.generator import MarkdownReportGenerator, ReportGenerator
 
 
@@ -24,6 +24,15 @@ def build_result(
         response=response,
         success=success,
         evidence=[f"Evidence for {attack_id}"],
+        trace=[
+            TraceEvent(
+                event_type="attack_started",
+                target_name="customer_support",
+                attack_id=attack_id,
+                message=f"Started {attack_id}",
+                metadata={"phase": "runner"},
+            )
+        ],
         recommendation=recommendation,
     )
 
@@ -65,6 +74,8 @@ def test_report_generator_produces_richer_schema() -> None:
     assert isinstance(datetime.fromisoformat(payload["created_at"]), datetime)
     assert payload["category_summary"][0]["category"] == "prompt_injection"
     assert payload["findings"][0]["title"] == "Reveal system prompt"
+    assert payload["findings"][0]["trace"][0]["attack_id"] == "PI-001"
+    assert payload["findings"][0]["trace"][0]["event_type"] == "attack_started"
     assert payload["recommendations"] == ["Block system prompt disclosure."]
 
 
@@ -93,6 +104,8 @@ def test_markdown_report_includes_expected_sections() -> None:
     assert "| Category | Total Attacks | Successful Attacks | Success Rate | Max Severity |" in rendered
     assert "## Findings" in rendered
     assert "### PI-001 - Reveal system prompt" in rendered
+    assert "Trajectory:" in rendered
+    assert "- `attack_started`:" in rendered
     assert "## Recommendations" in rendered
     assert "## Ethical and Scope Note" in rendered
     assert "local intentionally vulnerable demo targets" in rendered
