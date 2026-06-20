@@ -10,8 +10,11 @@ from pathlib import Path
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
 from llm_guardian.models import ScanReport
-from llm_guardian.reports.generator import MarkdownReportGenerator
-from llm_guardian.runner.scan_runner import ScanRunner
+from llm_guardian.runner.scan_service import (
+    render_report_json,
+    render_report_markdown,
+    run_offline_scan,
+)
 from llm_guardian.targets.registry import create_target, list_targets
 
 
@@ -60,13 +63,10 @@ def scan(
         return 2
 
     try:
-        target_agent = create_target(target)
+        report = run_offline_scan(target_name=target)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-
-    library = _load_default_library()
-    report = ScanRunner(target=target_agent).run(library.attacks)
 
     print(f"Target: {report.target_name}")
     print(f"Total attacks: {report.total_attacks}")
@@ -75,12 +75,12 @@ def scan(
     print(f"Risk level: {report.risk_level.value}")
 
     if output is not None:
-        rendered = json.dumps(report.model_dump(mode="json"), indent=2)
+        rendered = render_report_json(report)
         output.write_text(rendered + "\n", encoding="utf-8")
         print(f"Wrote JSON report to {output}")
 
     if markdown_output is not None:
-        rendered_markdown = MarkdownReportGenerator().render(report)
+        rendered_markdown = render_report_markdown(report)
         markdown_output.write_text(rendered_markdown + "\n", encoding="utf-8")
         print(f"Wrote Markdown report to {markdown_output}")
 

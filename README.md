@@ -3,7 +3,7 @@
 LLM Guardian is a controlled AI Red Team evaluation harness for testing local, intentionally vulnerable LLM target agents. The project is designed for spec-first, TDD-style development with deterministic offline tests.
 
 ## Current Status
-This repository currently contains the initial context package only. Application logic, Streamlit UI, target agents, scan runner, evaluators, scoring, and report generation will be implemented in later vertical slices.
+The repository contains a deterministic offline scan engine, local vulnerable demo targets, CLI workflows, and a local Streamlit dashboard for exploring scan results.
 
 ## MVP Goal
 - Load predefined attack cases from YAML.
@@ -26,7 +26,20 @@ Use the repository verification gate before completing future implementation tas
 ./verify.sh
 ```
 
-At this initial stage, the script skips code-specific checks until `src/` and `tests/` exist.
+The verification gate compiles the codebase, runs tests, and validates the attack library.
+
+## Local Usage
+Run the verification gate:
+
+```bash
+./verify.sh
+```
+
+Run the Streamlit dashboard locally:
+
+```bash
+python -m streamlit run src/llm_guardian/app/streamlit_app.py
+```
 
 ## Development Workflow
 Development work should happen on focused `feature/*` branches, with `main` kept stable. See `docs/GIT_WORKFLOW.md` for branch, commit, push, and merge rules.
