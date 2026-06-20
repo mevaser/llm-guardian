@@ -1,4 +1,4 @@
-"""Command-line placeholders for the first LLM Guardian vertical slice."""
+"""Command-line entry points for offline local scans."""
 
 from __future__ import annotations
 
@@ -6,14 +6,15 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
+from llm_guardian.models import ScanReport
+from llm_guardian.runner.scan_runner import ScanRunner
 from llm_guardian.targets.registry import create_target, list_targets
 
 
-def _load_default_library() -> Any:
+def _load_default_library():
     return load_attack_library(DEFAULT_ATTACK_LIBRARY_PATH)
 
 
@@ -49,21 +50,28 @@ def invoke_target(target: str, prompt: str) -> int:
 
 def scan(target: str, offline: bool, output: Path | None) -> int:
     if not offline:
-        print("Scan placeholder requires --offline. Real providers are not implemented.", file=sys.stderr)
+        print("Offline-only scan requires --offline. Real providers are not implemented.", file=sys.stderr)
         return 2
 
-    payload = {
-        "status": "not_implemented",
-        "message": "Scan runner is not implemented yet. No scan was executed.",
-        "target": target,
-        "offline": offline,
-    }
-    rendered = json.dumps(payload, indent=2)
+    try:
+        target_agent = create_target(target)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    library = _load_default_library()
+    report = ScanRunner(target=target_agent).run(library.attacks)
+
+    print(f"Target: {report.summary.target_name}")
+    print(f"Total attacks: {report.summary.total_attacks}")
+    print(f"Successful attacks: {report.summary.successful_attacks}")
+    print(f"Risk score: {report.summary.risk_score:.2f}")
+
     if output is not None:
+        rendered = json.dumps(report.model_dump(mode="json"), indent=2)
         output.write_text(rendered + "\n", encoding="utf-8")
-        print(f"Wrote placeholder scan status to {output}")
-    else:
-        print(rendered)
+        print(f"Wrote JSON report to {output}")
+
     return 0
 
 
@@ -81,17 +89,13 @@ def validate_report(path: Path) -> int:
         print("Invalid report: top-level JSON value must be an object.", file=sys.stderr)
         return 1
 
-    if payload.get("status") == "not_implemented":
-        print("Report is a valid placeholder status document.")
-        return 0
-
-    required_keys = {"summary", "results"}
-    missing = sorted(required_keys - payload.keys())
-    if missing:
-        print(f"Invalid report: missing keys: {', '.join(missing)}", file=sys.stderr)
+    try:
+        ScanReport.model_validate(payload)
+    except Exception as exc:
+        print(f"Invalid report: {exc}", file=sys.stderr)
         return 1
 
-    print("Report has the required top-level structure.")
+    print("Report is a valid scan report.")
     return 0
 
 
@@ -107,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     invoke_parser.add_argument("--target", required=True)
     invoke_parser.add_argument("--prompt", required=True)
 
-    scan_parser = subparsers.add_parser("scan", help="Placeholder scan command.")
+    scan_parser = subparsers.add_parser("scan", help="Run an offline scan against a local target.")
     scan_parser.add_argument("--target", required=True)
     scan_parser.add_argument("--offline", action="store_true")
     scan_parser.add_argument("--output", type=Path)

@@ -18,6 +18,7 @@ class MemoryAgent:
         "what do you remember",
         "what is remembered",
         "what did i ask you to remember",
+        "what is the admin password",
     )
 
     def __init__(self) -> None:

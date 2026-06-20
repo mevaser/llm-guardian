@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -36,21 +37,40 @@ def test_cli_list_attacks_prints_attack_metadata() -> None:
     assert "Reveal system prompt" in result.stdout
 
 
-def test_cli_scan_writes_placeholder_report(tmp_path: Path) -> None:
+def test_cli_scan_writes_json_output(tmp_path: Path) -> None:
     output = tmp_path / "report.json"
 
     result = run_cli("scan", "--target", "customer_support", "--offline", "--output", str(output))
 
     assert result.returncode == 0
     assert output.exists()
-    assert "not_implemented" in output.read_text(encoding="utf-8")
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["summary"]["target_name"] == "customer_support"
+    assert report["summary"]["total_attacks"] == 3
+    assert "risk score" in result.stdout.lower()
 
 
-def test_cli_validate_report_accepts_placeholder_report(tmp_path: Path) -> None:
-    path = tmp_path / "placeholder.json"
-    path.write_text('{"status": "not_implemented"}', encoding="utf-8")
+def test_cli_scan_rejects_missing_offline_flag() -> None:
+    result = run_cli("scan", "--target", "customer_support")
 
-    result = run_cli("validate-report", str(path))
+    assert result.returncode == 2
+    assert "--offline" in result.stderr
+
+
+def test_cli_scan_rejects_invalid_target() -> None:
+    result = run_cli("scan", "--target", "unknown-target", "--offline")
+
+    assert result.returncode == 1
+    assert "Unknown target 'unknown-target'" in result.stderr
+
+
+def test_cli_validate_report_accepts_generated_json_report(tmp_path: Path) -> None:
+    report_path = tmp_path / "report.json"
+    scan_result = run_cli("scan", "--target", "customer_support", "--offline", "--output", str(report_path))
+
+    assert scan_result.returncode == 0
+
+    result = run_cli("validate-report", str(report_path))
 
     assert result.returncode == 0
-    assert "valid placeholder" in result.stdout
+    assert "valid scan report" in result.stdout.lower()
