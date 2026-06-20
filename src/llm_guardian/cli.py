@@ -10,6 +10,7 @@ from typing import Any
 
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
+from llm_guardian.targets.registry import create_target, list_targets
 
 
 def _load_default_library() -> Any:
@@ -26,6 +27,23 @@ def list_attacks() -> int:
 def validate_attacks() -> int:
     library = _load_default_library()
     print(f"Attack library valid: {len(library.attacks)} attacks")
+    return 0
+
+
+def list_target_names() -> int:
+    for target_name in list_targets():
+        print(target_name)
+    return 0
+
+
+def invoke_target(target: str, prompt: str) -> int:
+    try:
+        response = create_target(target).invoke(prompt)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    print(response.content)
     return 0
 
 
@@ -83,6 +101,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("list-attacks", help="List configured attack cases.")
     subparsers.add_parser("validate-attacks", help="Validate the default attack library.")
+    subparsers.add_parser("list-targets", help="List available local target agents.")
+
+    invoke_parser = subparsers.add_parser("invoke-target", help="Invoke a local target agent.")
+    invoke_parser.add_argument("--target", required=True)
+    invoke_parser.add_argument("--prompt", required=True)
 
     scan_parser = subparsers.add_parser("scan", help="Placeholder scan command.")
     scan_parser.add_argument("--target", required=True)
@@ -104,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
             return list_attacks()
         if args.command == "validate-attacks":
             return validate_attacks()
+        if args.command == "list-targets":
+            return list_target_names()
+        if args.command == "invoke-target":
+            return invoke_target(target=args.target, prompt=args.prompt)
         if args.command == "scan":
             return scan(target=args.target, offline=args.offline, output=args.output)
         if args.command == "validate-report":

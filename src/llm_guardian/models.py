@@ -1,6 +1,7 @@
 """Core data contracts for LLM Guardian."""
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -45,6 +46,20 @@ class AttackCase(StrictBaseModel):
 
 class AttackLibrary(StrictBaseModel):
     attacks: list[AttackCase]
+
+
+class TargetResponse(StrictBaseModel):
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    memory_updates: list[str] = Field(default_factory=list)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
 
 
 class AttackResult(StrictBaseModel):
