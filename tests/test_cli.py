@@ -45,9 +45,31 @@ def test_cli_scan_writes_json_output(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert output.exists()
     report = json.loads(output.read_text(encoding="utf-8"))
-    assert report["summary"]["target_name"] == "customer_support"
-    assert report["summary"]["total_attacks"] == 3
+    assert report["target_name"] == "customer_support"
+    assert report["total_attacks"] == 3
+    assert report["risk_level"] in {"low", "medium", "high", "critical"}
     assert "risk score" in result.stdout.lower()
+
+
+def test_cli_scan_writes_markdown_output(tmp_path: Path) -> None:
+    json_output = tmp_path / "report.json"
+    markdown_output = tmp_path / "report.md"
+
+    result = run_cli(
+        "scan",
+        "--target",
+        "customer_support",
+        "--offline",
+        "--output",
+        str(json_output),
+        "--markdown-output",
+        str(markdown_output),
+    )
+
+    assert result.returncode == 0
+    assert json_output.exists()
+    assert markdown_output.exists()
+    assert "# LLM Guardian Scan Report" in markdown_output.read_text(encoding="utf-8")
 
 
 def test_cli_scan_rejects_missing_offline_flag() -> None:
@@ -74,3 +96,26 @@ def test_cli_validate_report_accepts_generated_json_report(tmp_path: Path) -> No
 
     assert result.returncode == 0
     assert "valid scan report" in result.stdout.lower()
+
+
+def test_cli_validate_report_rejects_legacy_summary_shape(tmp_path: Path) -> None:
+    report_path = tmp_path / "report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "target_name": "customer_support",
+                    "total_attacks": 1,
+                    "successful_attacks": 1,
+                    "risk_score": 10.0,
+                },
+                "results": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli("validate-report", str(report_path))
+
+    assert result.returncode == 1
+    assert "invalid report" in result.stderr.lower()

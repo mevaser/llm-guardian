@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from llm_guardian.evaluators.deterministic import DeterministicEvaluator
-from llm_guardian.models import AttackCase, ScanReport, ScanSummary, TargetResponse
+from llm_guardian.models import AttackCase, ScanReport, TargetResponse
+from llm_guardian.reports.generator import ReportGenerator
 from llm_guardian.targets.base import TargetAgent
 
 
@@ -17,23 +18,16 @@ class ScanRunner:
         *,
         target: TargetAgent,
         evaluator: DeterministicEvaluator | None = None,
+        report_generator: ReportGenerator | None = None,
     ) -> None:
         self._target = target
         self._evaluator = evaluator or DeterministicEvaluator()
+        self._report_generator = report_generator or ReportGenerator()
 
     def run(self, attacks: Iterable[AttackCase]) -> ScanReport:
         results = [self._run_attack(attack) for attack in attacks]
-        total_attacks = len(results)
-        successful_attacks = sum(1 for result in results if result.success)
-        risk_score = round((successful_attacks / total_attacks) * 10, 2) if total_attacks else 0.0
-
-        return ScanReport(
-            summary=ScanSummary(
-                target_name=self._target.name,
-                total_attacks=total_attacks,
-                successful_attacks=successful_attacks,
-                risk_score=risk_score,
-            ),
+        return self._report_generator.build(
+            target_name=self._target.name,
             results=results,
         )
 

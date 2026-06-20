@@ -1,9 +1,10 @@
 """Core data contracts for LLM Guardian."""
 
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class AttackCategory(str, Enum):
@@ -15,6 +16,14 @@ class AttackCategory(str, Enum):
 
 
 class Severity(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class RiskLevel(str, Enum):
+    NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -66,6 +75,7 @@ class AttackResult(StrictBaseModel):
     attack_id: str
     category: AttackCategory
     severity: Severity
+    title: str | None = None
     target_name: str
     prompt: str
     response: str
@@ -80,12 +90,22 @@ class AttackResult(StrictBaseModel):
             raise ValueError("must be a non-empty string")
         return value
 
+    @field_validator("title")
+    @classmethod
+    def validate_optional_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
 
 class ScanSummary(StrictBaseModel):
     target_name: str
     total_attacks: int = Field(ge=0)
     successful_attacks: int = Field(ge=0)
     risk_score: float = Field(ge=0, le=10)
+    risk_level: RiskLevel
 
     @field_validator("target_name")
     @classmethod
@@ -95,6 +115,60 @@ class ScanSummary(StrictBaseModel):
         return value
 
 
+class CategorySummary(StrictBaseModel):
+    category: AttackCategory
+    total_attacks: int = Field(ge=0)
+    successful_attacks: int = Field(ge=0)
+    success_rate: float = Field(ge=0, le=1)
+    max_severity_seen: Severity
+    recommendations: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> "CategorySummary":
+        if self.successful_attacks > self.total_attacks:
+            raise ValueError("successful_attacks cannot exceed total_attacks")
+        return self
+
+
 class ScanReport(StrictBaseModel):
-    summary: ScanSummary
-    results: list[AttackResult] = Field(default_factory=list)
+    scan_id: str
+    created_at: datetime
+    target_name: str
+    total_attacks: int = Field(ge=0)
+    successful_attacks: int = Field(ge=0)
+    risk_score: float = Field(ge=0, le=10)
+    risk_level: RiskLevel
+    category_summary: list[CategorySummary] = Field(default_factory=list)
+    findings: list[AttackResult] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+    @field_validator("scan_id", "target_name")
+    @classmethod
+    def validate_non_empty_report_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> "ScanReport":
+        if self.successful_attacks > self.total_attacks:
+            raise ValueError("successful_attacks cannot exceed total_attacks")
+        if len(self.findings) != self.total_attacks:
+            raise ValueError("total_attacks must match the number of findings")
+        if sum(1 for finding in self.findings if finding.success) != self.successful_attacks:
+            raise ValueError("successful_attacks must match successful findings")
+        return self
+
+    @property
+    def results(self) -> list[AttackResult]:
+        return self.findings
+
+    @property
+    def summary(self) -> ScanSummary:
+        return ScanSummary(
+            target_name=self.target_name,
+            total_attacks=self.total_attacks,
+            successful_attacks=self.successful_attacks,
+            risk_score=self.risk_score,
+            risk_level=self.risk_level,
+        )

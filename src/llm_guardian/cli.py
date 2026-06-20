@@ -10,6 +10,7 @@ from pathlib import Path
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
 from llm_guardian.models import ScanReport
+from llm_guardian.reports.generator import MarkdownReportGenerator
 from llm_guardian.runner.scan_runner import ScanRunner
 from llm_guardian.targets.registry import create_target, list_targets
 
@@ -48,7 +49,12 @@ def invoke_target(target: str, prompt: str) -> int:
     return 0
 
 
-def scan(target: str, offline: bool, output: Path | None) -> int:
+def scan(
+    target: str,
+    offline: bool,
+    output: Path | None,
+    markdown_output: Path | None,
+) -> int:
     if not offline:
         print("Offline-only scan requires --offline. Real providers are not implemented.", file=sys.stderr)
         return 2
@@ -62,15 +68,21 @@ def scan(target: str, offline: bool, output: Path | None) -> int:
     library = _load_default_library()
     report = ScanRunner(target=target_agent).run(library.attacks)
 
-    print(f"Target: {report.summary.target_name}")
-    print(f"Total attacks: {report.summary.total_attacks}")
-    print(f"Successful attacks: {report.summary.successful_attacks}")
-    print(f"Risk score: {report.summary.risk_score:.2f}")
+    print(f"Target: {report.target_name}")
+    print(f"Total attacks: {report.total_attacks}")
+    print(f"Successful attacks: {report.successful_attacks}")
+    print(f"Risk score: {report.risk_score:.2f}")
+    print(f"Risk level: {report.risk_level.value}")
 
     if output is not None:
         rendered = json.dumps(report.model_dump(mode="json"), indent=2)
         output.write_text(rendered + "\n", encoding="utf-8")
         print(f"Wrote JSON report to {output}")
+
+    if markdown_output is not None:
+        rendered_markdown = MarkdownReportGenerator().render(report)
+        markdown_output.write_text(rendered_markdown + "\n", encoding="utf-8")
+        print(f"Wrote Markdown report to {markdown_output}")
 
     return 0
 
@@ -115,8 +127,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--target", required=True)
     scan_parser.add_argument("--offline", action="store_true")
     scan_parser.add_argument("--output", type=Path)
+    scan_parser.add_argument("--markdown-output", type=Path)
 
-    report_parser = subparsers.add_parser("validate-report", help="Validate basic report JSON.")
+    report_parser = subparsers.add_parser("validate-report", help="Validate a structured report JSON file.")
     report_parser.add_argument("path", type=Path)
 
     return parser
@@ -136,7 +149,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "invoke-target":
             return invoke_target(target=args.target, prompt=args.prompt)
         if args.command == "scan":
-            return scan(target=args.target, offline=args.offline, output=args.output)
+            return scan(
+                target=args.target,
+                offline=args.offline,
+                output=args.output,
+                markdown_output=args.markdown_output,
+            )
         if args.command == "validate-report":
             return validate_report(args.path)
     except AttackLibraryLoadError as exc:
