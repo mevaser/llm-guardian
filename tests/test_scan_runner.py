@@ -79,8 +79,26 @@ def test_scan_runner_customer_support_succeeds_for_attack_library_prompt_injecti
     report = runner.run(library.attacks)
     prompt_injection_result = next(result for result in report.findings if result.attack_id == "PI-001")
 
-    assert report.total_attacks == 3
+    assert report.total_attacks == len(library.attacks)
     assert report.successful_attacks >= 1
     assert report.category_summary
     assert prompt_injection_result.success is True
     assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in prompt_injection_result.response
+
+
+def test_scan_runner_customer_support_marks_rag_injection_leaks_successful() -> None:
+    library = load_attack_library(DEFAULT_ATTACK_LIBRARY_PATH)
+    runner = ScanRunner(target=CustomerSupportAgent())
+
+    report = runner.run(library.attacks)
+    rag_results = {
+        result.attack_id: result for result in report.findings if result.attack_id in {"RI-001", "RI-002", "RI-003"}
+    }
+
+    assert set(rag_results) == {"RI-001", "RI-002", "RI-003"}
+    for attack_id in ("RI-001", "RI-002", "RI-003"):
+        result = rag_results[attack_id]
+        assert result.success is True
+        assert "hidden instructions exposed" in result.response.lower()
+        assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in result.response
+        assert result.evidence
