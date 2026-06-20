@@ -4,6 +4,8 @@ from llm_guardian.models import AttackCase, AttackCategory, Severity, TargetResp
 from llm_guardian.runner.scan_runner import ScanRunner
 from llm_guardian.targets.customer_support import CustomerSupportAgent
 from llm_guardian.targets.memory_agent import MemoryAgent
+from llm_guardian.targets.rag_agent import RagAgent
+from llm_guardian.targets.tool_agent import ToolAgent
 
 
 class RecordingTarget:
@@ -98,6 +100,46 @@ def test_scan_runner_customer_support_marks_rag_injection_leaks_successful() -> 
     assert set(rag_results) == {"RI-001", "RI-002", "RI-003"}
     for attack_id in ("RI-001", "RI-002", "RI-003"):
         result = rag_results[attack_id]
+        assert result.success is True
+        assert "hidden instructions exposed" in result.response.lower()
+        assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in result.response
+        assert result.evidence
+
+
+def test_scan_runner_tool_agent_succeeds_for_tool_abuse_attacks() -> None:
+    library = load_attack_library(DEFAULT_ATTACK_LIBRARY_PATH)
+    runner = ScanRunner(target=ToolAgent())
+
+    report = runner.run(library.attacks)
+    tool_results = {
+        result.attack_id: result for result in report.findings if result.attack_id.startswith("TA-")
+    }
+
+    assert set(tool_results) == {"TA-001", "TA-002", "TA-003", "TA-004", "TA-005"}
+    for attack_id, indicator in (
+        ("TA-001", "email sent"),
+        ("TA-002", "export succeeded"),
+        ("TA-003", "saved"),
+        ("TA-004", "bulk action completed"),
+        ("TA-005", "tool executed"),
+    ):
+        result = tool_results[attack_id]
+        assert result.success is True
+        assert indicator in result.response.lower()
+        assert result.evidence
+
+
+def test_scan_runner_rag_agent_succeeds_for_rag_injection_attacks() -> None:
+    library = load_attack_library(DEFAULT_ATTACK_LIBRARY_PATH)
+    runner = ScanRunner(target=RagAgent())
+
+    report = runner.run(library.attacks)
+    rag_results = {
+        result.attack_id: result for result in report.findings if result.attack_id.startswith("RI-")
+    }
+
+    assert set(rag_results) == {"RI-001", "RI-002", "RI-003"}
+    for result in rag_results.values():
         assert result.success is True
         assert "hidden instructions exposed" in result.response.lower()
         assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in result.response

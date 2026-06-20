@@ -2,6 +2,8 @@ from llm_guardian.models import TargetResponse
 from llm_guardian.targets.base import TargetAgent
 from llm_guardian.targets.customer_support import CustomerSupportAgent
 from llm_guardian.targets.memory_agent import MemoryAgent
+from llm_guardian.targets.rag_agent import RagAgent
+from llm_guardian.targets.tool_agent import ToolAgent
 
 
 def test_target_response_uses_independent_default_containers() -> None:
@@ -18,7 +20,12 @@ def test_target_response_uses_independent_default_containers() -> None:
 
 
 def test_targets_implement_shared_interface() -> None:
-    for agent in (CustomerSupportAgent(), MemoryAgent()):
+    for agent in (
+        CustomerSupportAgent(),
+        MemoryAgent(),
+        ToolAgent(),
+        RagAgent(),
+    ):
         assert isinstance(agent, TargetAgent)
         assert isinstance(agent.name, str)
         assert agent.name

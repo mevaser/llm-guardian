@@ -72,6 +72,74 @@ def test_cli_scan_writes_markdown_output(tmp_path: Path) -> None:
     assert "# LLM Guardian Scan Report" in markdown_output.read_text(encoding="utf-8")
 
 
+def test_cli_list_targets_includes_tool_and_rag_agents() -> None:
+    result = run_cli("list-targets")
+
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == [
+        "customer_support",
+        "memory_agent",
+        "rag_agent",
+        "tool_agent",
+    ]
+
+
+def test_cli_scan_and_validate_report_for_tool_agent(tmp_path: Path) -> None:
+    report_path = tmp_path / "tool-report.json"
+    markdown_path = tmp_path / "tool-report.md"
+
+    scan_result = run_cli(
+        "scan",
+        "--target",
+        "tool_agent",
+        "--offline",
+        "--output",
+        str(report_path),
+        "--markdown-output",
+        str(markdown_path),
+    )
+
+    assert scan_result.returncode == 0
+    assert report_path.exists()
+    assert markdown_path.exists()
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["target_name"] == "tool_agent"
+
+    validate_result = run_cli("validate-report", str(report_path))
+
+    assert validate_result.returncode == 0
+    assert "valid scan report" in validate_result.stdout.lower()
+
+
+def test_cli_scan_and_validate_report_for_rag_agent(tmp_path: Path) -> None:
+    report_path = tmp_path / "rag-report.json"
+    markdown_path = tmp_path / "rag-report.md"
+
+    scan_result = run_cli(
+        "scan",
+        "--target",
+        "rag_agent",
+        "--offline",
+        "--output",
+        str(report_path),
+        "--markdown-output",
+        str(markdown_path),
+    )
+
+    assert scan_result.returncode == 0
+    assert report_path.exists()
+    assert markdown_path.exists()
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["target_name"] == "rag_agent"
+
+    validate_result = run_cli("validate-report", str(report_path))
+
+    assert validate_result.returncode == 0
+    assert "valid scan report" in validate_result.stdout.lower()
+
+
 def test_cli_scan_rejects_missing_offline_flag() -> None:
     result = run_cli("scan", "--target", "customer_support")
 
