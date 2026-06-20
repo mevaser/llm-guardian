@@ -15,7 +15,12 @@ class ScoreResult:
 
 
 class ScoringEngine:
-    """Compute deterministic severity-weighted risk scores and summaries."""
+    """Compute deterministic severity-weighted risk scores and summaries.
+
+    Trace events do not influence scoring. Risk remains tied to severity and
+    evaluator success so auditability can improve without changing course-facing
+    scoring behavior.
+    """
 
     _SEVERITY_WEIGHTS = {
         Severity.LOW: 1,

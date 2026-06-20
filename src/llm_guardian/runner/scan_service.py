@@ -19,7 +19,11 @@ def run_offline_scan(
     target_name: str,
     categories: Iterable[AttackCategory | str] | None = None,
 ) -> ScanReport:
-    """Run a deterministic local scan with an optional pre-execution category filter."""
+    """Run a deterministic local scan with an optional pre-execution category filter.
+
+    This helper keeps CLI and Streamlit entry points aligned on one execution
+    path so they serialize the same report and trajectory structure.
+    """
 
     target_agent = create_target(target_name)
     library = load_attack_library(DEFAULT_ATTACK_LIBRARY_PATH)

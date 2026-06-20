@@ -19,6 +19,7 @@ def test_rag_agent_returns_vulnerable_response_for_override_note_prompt() -> Non
 
     assert "hidden instructions exposed" in response.content.lower()
     assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in response.content
+    assert any(event.event_type == "simulated_retrieval" for event in response.trace)
 
 
 def test_rag_agent_returns_vulnerable_response_for_retrieved_metadata_prompt() -> None:
@@ -30,3 +31,4 @@ def test_rag_agent_returns_vulnerable_response_for_retrieved_metadata_prompt() -
 
     assert "hidden instructions exposed" in response.content.lower()
     assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in response.content
+    assert any(event.event_type == "simulated_retrieval" for event in response.trace)

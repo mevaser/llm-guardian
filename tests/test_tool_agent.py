@@ -25,6 +25,7 @@ def test_tool_agent_returns_simulated_vulnerable_email_response() -> None:
     assert "simulated email sent" in response.content.lower()
     assert "attacker@example.com" in response.content
     assert response.tool_calls == []
+    assert any(event.event_type == "simulated_tool_decision" for event in response.trace)
 
 
 def test_tool_agent_returns_simulated_vulnerable_export_response() -> None:
@@ -36,6 +37,7 @@ def test_tool_agent_returns_simulated_vulnerable_export_response() -> None:
 
     assert "export succeeded" in response.content.lower()
     assert "customer list" in response.content.lower()
+    assert any(event.event_type == "simulated_tool_decision" for event in response.trace)
 
 
 def test_tool_agent_does_not_perform_real_external_side_effects(monkeypatch) -> None:

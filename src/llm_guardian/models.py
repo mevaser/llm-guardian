@@ -1,6 +1,6 @@
 """Core data contracts for LLM Guardian."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -58,10 +58,13 @@ class AttackLibrary(StrictBaseModel):
 
 
 class TargetResponse(StrictBaseModel):
+    """Deterministic target output plus optional operational trace data."""
+
     content: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     memory_updates: list[str] = Field(default_factory=list)
+    trace: list["TraceEvent"] = Field(default_factory=list)
 
     @field_validator("content")
     @classmethod
@@ -71,7 +74,27 @@ class TargetResponse(StrictBaseModel):
         return value
 
 
+class TraceEvent(StrictBaseModel):
+    """A compact operational audit event for deterministic scan trajectories."""
+
+    event_type: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    target_name: str
+    attack_id: str
+    message: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("event_type", "target_name", "attack_id", "message")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
 class AttackResult(StrictBaseModel):
+    """The evaluated outcome for one attack, including evidence and trajectory."""
+
     attack_id: str
     category: AttackCategory
     severity: Severity
@@ -81,6 +104,7 @@ class AttackResult(StrictBaseModel):
     response: str
     success: bool
     evidence: list[str] = Field(default_factory=list)
+    trace: list[TraceEvent] = Field(default_factory=list)
     recommendation: str
 
     @field_validator("attack_id", "target_name", "prompt", "recommendation")

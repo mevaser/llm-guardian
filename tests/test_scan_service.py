@@ -39,6 +39,9 @@ def test_render_report_json_serializes_scan_report() -> None:
     payload = json.loads(render_report_json(report))
 
     assert ScanReport.model_validate(payload) == report
+    assert payload["findings"][0]["trace"]
+    assert payload["findings"][0]["trace"][0]["attack_id"] == report.findings[0].attack_id
+    assert payload["findings"][0]["trace"][0]["event_type"]
 
 
 def test_render_report_markdown_uses_existing_report_generator() -> None:
@@ -48,3 +51,4 @@ def test_render_report_markdown_uses_existing_report_generator() -> None:
 
     assert "# LLM Guardian Scan Report" in rendered
     assert f"Target: `{report.target_name}`" in rendered
+    assert "Trajectory:" in rendered

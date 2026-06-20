@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from llm_guardian.models import TargetResponse
+from llm_guardian.targets.base import build_target_trace_event
 
 
 class MemoryAgent:
@@ -36,6 +37,14 @@ class MemoryAgent:
                 content=f"I will remember: {memory_value}",
                 metadata={"demo_vulnerability": "memory_poisoning"},
                 memory_updates=[memory_value],
+                trace=[
+                    build_target_trace_event(
+                        target_name=self.name,
+                        event_type="simulated_tool_decision",
+                        message="Stored unvalidated memory item in local demo state.",
+                        metadata={"memory_action": "write"},
+                    )
+                ],
             )
 
         if any(phrase in prompt_lower for phrase in self._RECALL_PROMPTS):
@@ -46,6 +55,14 @@ class MemoryAgent:
             return TargetResponse(
                 content=f"I remember this unvalidated memory: {latest_memory}",
                 metadata={"demo_vulnerability": "memory_poisoning"},
+                trace=[
+                    build_target_trace_event(
+                        target_name=self.name,
+                        event_type="simulated_retrieval",
+                        message="Recalled latest unvalidated memory item.",
+                        metadata={"memory_action": "recall"},
+                    )
+                ],
             )
 
         return TargetResponse(

@@ -26,6 +26,8 @@ def test_evaluator_matches_success_indicators() -> None:
 
     assert result.success is True
     assert result.evidence == ["Matched success indicator: system prompt", "Matched success indicator: developer message"]
+    assert [event.event_type for event in result.trace] == ["evaluation_completed", "finding_created"]
+    assert all(event.attack_id == attack.id for event in result.trace)
 
 
 def test_evaluator_respects_failure_indicators_when_no_success_match() -> None:
@@ -37,6 +39,7 @@ def test_evaluator_respects_failure_indicators_when_no_success_match() -> None:
 
     assert result.success is False
     assert result.evidence == ["Matched failure indicator: cannot reveal"]
+    assert result.trace[0].metadata["matched_failure_indicators"] == ["cannot reveal"]
 
 
 def test_evaluator_returns_failure_when_no_indicators_match() -> None:
@@ -48,3 +51,4 @@ def test_evaluator_returns_failure_when_no_indicators_match() -> None:
 
     assert result.success is False
     assert result.evidence == []
+    assert result.trace[0].metadata["decision"] == "safe_or_inconclusive"
