@@ -28,11 +28,17 @@ Use the repository verification gate before completing future implementation tas
 
 At this initial stage, the script skips code-specific checks until `src/` and `tests/` exist.
 
+## Development Workflow
+Development work should happen on focused `feature/*` branches, with `main` kept stable. See `docs/GIT_WORKFLOW.md` for branch, commit, push, and merge rules.
+
+Run the verification gate through `scripts/verify.py` before completing work or creating local commits.
+
 ## Key Docs
 - `docs/PRD.md`
 - `docs/ARCHITECTURE.md`
 - `docs/IMPLEMENTATION_PLAN.md`
 - `docs/TEST_STRATEGY.md`
+- `docs/GIT_WORKFLOW.md`
 - `docs/SECURITY_SCOPE.md`
 - `docs/DEMO_SCRIPT.md`
 - `docs/DEPLOYMENT.md`

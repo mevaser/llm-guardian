@@ -24,6 +24,17 @@ Run before every completion:
 ./verify.sh
 ```
 
+## Git Workflow
+- Codex may edit files for the current task.
+- Codex must run `python scripts/verify.py` before every commit.
+- Codex must run `git diff --check` before every commit.
+- Codex must inspect `git status --short` before every commit.
+- Codex must not commit secrets, `.env` files, caches, generated reports, virtual environments, or binary planning documents.
+- Codex may create local commits when explicitly instructed.
+- Codex must not push to `main`.
+- Codex may push only to the current `feature/*` branch, and only when explicitly instructed.
+- Codex must never use `git push --force`.
+
 ## Definition of Done
 A task is done only when:
 - Tests pass.
