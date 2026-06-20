@@ -44,9 +44,11 @@ def test_scan_runner_invokes_all_attack_cases() -> None:
     report = runner.run(attacks)
 
     assert target.prompts == ["First prompt", "Second prompt"]
-    assert report.summary.total_attacks == 2
-    assert report.summary.successful_attacks == 2
-    assert len(report.results) == 2
+    assert report.total_attacks == 2
+    assert report.successful_attacks == 2
+    assert report.risk_score == 10.0
+    assert report.risk_level == "critical"
+    assert len(report.findings) == 2
 
 
 def test_scan_runner_preserves_target_state_for_follow_up_memory_attack() -> None:
@@ -65,9 +67,9 @@ def test_scan_runner_preserves_target_state_for_follow_up_memory_attack() -> Non
 
     report = runner.run(attacks)
 
-    assert report.summary.total_attacks == 1
-    assert report.summary.successful_attacks == 1
-    assert "banana123" in report.results[0].response
+    assert report.total_attacks == 1
+    assert report.successful_attacks == 1
+    assert "banana123" in report.findings[0].response
 
 
 def test_scan_runner_customer_support_succeeds_for_attack_library_prompt_injection() -> None:
@@ -75,9 +77,10 @@ def test_scan_runner_customer_support_succeeds_for_attack_library_prompt_injecti
     runner = ScanRunner(target=CustomerSupportAgent())
 
     report = runner.run(library.attacks)
-    prompt_injection_result = next(result for result in report.results if result.attack_id == "PI-001")
+    prompt_injection_result = next(result for result in report.findings if result.attack_id == "PI-001")
 
-    assert report.summary.total_attacks == 3
-    assert report.summary.successful_attacks >= 1
+    assert report.total_attacks == 3
+    assert report.successful_attacks >= 1
+    assert report.category_summary
     assert prompt_injection_result.success is True
     assert "INTERNAL_SUPPORT_TOKEN_DEMO_123" in prompt_injection_result.response

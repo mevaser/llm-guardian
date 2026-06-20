@@ -33,6 +33,7 @@ class DeterministicEvaluator:
             attack_id=attack.id,
             category=attack.category,
             severity=attack.severity,
+            title=attack.title,
             target_name=target_name,
             prompt=attack.prompt,
             response=response.content,
