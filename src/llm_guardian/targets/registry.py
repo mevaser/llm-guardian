@@ -5,11 +5,15 @@ from __future__ import annotations
 from llm_guardian.targets.base import TargetAgent
 from llm_guardian.targets.customer_support import CustomerSupportAgent
 from llm_guardian.targets.memory_agent import MemoryAgent
+from llm_guardian.targets.rag_agent import RagAgent
+from llm_guardian.targets.tool_agent import ToolAgent
 
 
 _TARGET_FACTORIES = {
     "customer_support": CustomerSupportAgent,
     "memory_agent": MemoryAgent,
+    "tool_agent": ToolAgent,
+    "rag_agent": RagAgent,
 }
 
 
