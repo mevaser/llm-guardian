@@ -17,11 +17,13 @@ class PolicyEngine:
         if decision.action_type == "tool_action":
             return PolicyDecision(
                 decision="approved",
-                reason_summary="Tool actions remain enabled in vulnerable demo mode for evaluation coverage.",
+                reason_summary="Policy approved simulated tool action in vulnerable demo mode.",
                 applies_to=decision.action_type,
                 severity="medium",
                 metadata={
                     "vulnerable_demo_mode": self._vulnerable_demo_mode,
+                    "policy_decision": "approved",
+                    "risky_action": True,
                     "risk_flags": list(decision.risk_flags),
                 },
             )
