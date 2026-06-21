@@ -109,7 +109,7 @@ class SecurityAgentMarkdownReportBuilder:
             "## Objective",
             "",
             f"- Goal: {payload['objective']['goal']}",
-            f"- Allowed categories: {', '.join(payload['objective']['allowed_categories']) or 'none'}",
+            f"- Allowed categories: {self._render_allowed_categories(payload['objective']['allowed_categories'])}",
             f"- Safety mode: `{payload['objective']['safety_mode']}`",
             "",
             "## Summary",
@@ -168,6 +168,12 @@ class SecurityAgentMarkdownReportBuilder:
         if not strategies:
             return "none"
         return ", ".join(f"`{strategy}`" for strategy in strategies)
+
+    @staticmethod
+    def _render_allowed_categories(categories: list[str]) -> str:
+        if not categories:
+            return "not restricted"
+        return ", ".join(categories)
 
     @staticmethod
     def _build_attempt_id(attempt: dict[str, Any]) -> str:
