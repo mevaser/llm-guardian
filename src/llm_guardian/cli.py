@@ -5,21 +5,182 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
-from llm_guardian.models import ScanReport
+from llm_guardian.models import AttackCategory, ScanReport
 from llm_guardian.runner.scan_service import (
     render_report_json,
     render_report_markdown,
     run_offline_scan,
 )
+from llm_guardian.security_agent import (
+    SecurityAgent,
+    SecurityAgentJsonReportBuilder,
+    SecurityAgentMarkdownReportBuilder,
+    SecurityTestObjective,
+    TargetProfile,
+)
+from llm_guardian.security_agent.adapters import LocalTargetAdapter
 from llm_guardian.targets.registry import create_target, list_targets
+
+
+_AGENT_SCAN_TARGET_SETTINGS = {
+    "customer_support": {
+        "target_type": "generic_chatbot",
+        "capabilities": ["customer_support"],
+        "risk_surfaces": ["chat"],
+        "allowed_categories": ["prompt_injection", "jailbreak"],
+    },
+    "memory_agent": {
+        "target_type": "memory_agent",
+        "capabilities": ["memory"],
+        "risk_surfaces": ["memory"],
+        "allowed_categories": ["memory_poisoning", "prompt_injection", "jailbreak"],
+    },
+    "rag_agent": {
+        "target_type": "rag_app",
+        "capabilities": ["retrieval"],
+        "risk_surfaces": ["rag"],
+        "allowed_categories": ["rag_injection", "prompt_injection", "jailbreak"],
+    },
+    "tool_agent": {
+        "target_type": "tool_using_agent",
+        "capabilities": ["tools", "email", "export", "tickets"],
+        "risk_surfaces": ["tools"],
+        "allowed_categories": ["tool_abuse", "prompt_injection", "jailbreak"],
+    },
+}
 
 
 def _load_default_library():
     return load_attack_library(DEFAULT_ATTACK_LIBRARY_PATH)
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
+def _normalize_agent_scan_categories(
+    *,
+    category_flags: Iterable[str],
+    categories_flags: Iterable[str],
+) -> list[str]:
+    raw_values: list[str] = []
+    for value in category_flags:
+        if value and value.strip():
+            raw_values.append(value.strip())
+    for value in categories_flags:
+        if not value or not value.strip():
+            continue
+        raw_values.extend(item.strip() for item in value.split(",") if item.strip())
+
+    normalized: list[str] = []
+    valid_categories = {category.value for category in AttackCategory}
+    for value in raw_values:
+        if value not in valid_categories:
+            supported = ", ".join(sorted(valid_categories))
+            raise ValueError(f"Unknown category '{value}'. Supported categories: {supported}")
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def _build_agent_scan_target_profile(target_name: str) -> TargetProfile:
+    target = create_target(target_name)
+    try:
+        settings = _AGENT_SCAN_TARGET_SETTINGS[target_name]
+    except KeyError as exc:
+        supported_targets = ", ".join(sorted(_AGENT_SCAN_TARGET_SETTINGS))
+        raise ValueError(
+            f"Unknown target '{target_name}'. Supported targets: {supported_targets}"
+        ) from exc
+
+    return TargetProfile(
+        target_type=settings["target_type"],
+        capabilities=list(settings["capabilities"]),
+        risk_surfaces=list(settings["risk_surfaces"]),
+        allowed_categories=list(settings["allowed_categories"]),
+        authorization_scope="local_demo_only",
+        metadata={
+            "target_name": target.name,
+            "target_description": target.description,
+            "execution_mode": "local_demo_only",
+        },
+    )
+
+
+def _build_agent_scan_objective(
+    *,
+    allowed_categories: list[str],
+    max_attempts_per_attack: int,
+    max_total_attempts: int,
+) -> SecurityTestObjective:
+    return SecurityTestObjective(
+        goal="Run a deterministic local security-agent scan.",
+        allowed_categories=list(allowed_categories),
+        max_attempts_per_attack=max_attempts_per_attack,
+        max_total_attempts=max_total_attempts,
+        safety_mode="strict",
+        stop_on_success=False,
+    )
+
+
+def agent_scan(
+    *,
+    target: str,
+    category_flags: list[str],
+    categories_flags: list[str],
+    max_total_attempts: int,
+    max_attempts_per_attack: int,
+    max_mutations_per_attack: int,
+    output_format: str,
+    output_file: Path | None,
+) -> int:
+    try:
+        selected_categories = _normalize_agent_scan_categories(
+            category_flags=category_flags,
+            categories_flags=categories_flags,
+        )
+        target_agent = create_target(target)
+        target_profile = _build_agent_scan_target_profile(target)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    objective = _build_agent_scan_objective(
+        allowed_categories=selected_categories,
+        max_attempts_per_attack=max_attempts_per_attack,
+        max_total_attempts=max_total_attempts,
+    )
+    library = _load_default_library()
+    result = SecurityAgent(max_mutations_per_attack=max(max_mutations_per_attack, 0)).run(
+        target_profile=target_profile,
+        objective=objective,
+        attacks=library.attacks,
+        target_adapter=LocalTargetAdapter(target_agent),
+    )
+
+    if output_format == "json":
+        payload = SecurityAgentJsonReportBuilder().build(result=result, attack_library=library.attacks)
+        rendered_output = json.dumps(payload, indent=2)
+    else:
+        rendered_output = SecurityAgentMarkdownReportBuilder().build(
+            result=result,
+            attack_library=library.attacks,
+        )
+
+    if output_file is not None:
+        output_file.write_text(rendered_output + "\n", encoding="utf-8")
+        return 0
+
+    sys.stdout.write(rendered_output + "\n")
+    return 0
 
 
 def list_attacks() -> int:
@@ -129,6 +290,19 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--output", type=Path)
     scan_parser.add_argument("--markdown-output", type=Path)
 
+    agent_scan_parser = subparsers.add_parser(
+        "agent-scan",
+        help="Run the SecurityAgent orchestrator against an approved local demo target.",
+    )
+    agent_scan_parser.add_argument("--target", required=True)
+    agent_scan_parser.add_argument("--category", dest="category_flags", action="append", default=[])
+    agent_scan_parser.add_argument("--categories", dest="categories_flags", action="append", default=[])
+    agent_scan_parser.add_argument("--max-total-attempts", type=_positive_int, default=5)
+    agent_scan_parser.add_argument("--max-attempts-per-attack", type=_positive_int, default=1)
+    agent_scan_parser.add_argument("--max-mutations-per-attack", type=int, default=0)
+    agent_scan_parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
+    agent_scan_parser.add_argument("--output-file", type=Path)
+
     report_parser = subparsers.add_parser("validate-report", help="Validate a structured report JSON file.")
     report_parser.add_argument("path", type=Path)
 
@@ -154,6 +328,17 @@ def main(argv: list[str] | None = None) -> int:
                 offline=args.offline,
                 output=args.output,
                 markdown_output=args.markdown_output,
+            )
+        if args.command == "agent-scan":
+            return agent_scan(
+                target=args.target,
+                category_flags=args.category_flags,
+                categories_flags=args.categories_flags,
+                max_total_attempts=args.max_total_attempts,
+                max_attempts_per_attack=args.max_attempts_per_attack,
+                max_mutations_per_attack=args.max_mutations_per_attack,
+                output_format=args.output_format,
+                output_file=args.output_file,
             )
         if args.command == "validate-report":
             return validate_report(args.path)
