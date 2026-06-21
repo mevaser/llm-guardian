@@ -10,10 +10,12 @@ from llm_guardian.security_agent.findings import SecurityFindingBuilder
 from llm_guardian.security_agent.models import (
     AttackAttempt,
     AttackPlan,
+    AttackCampaign,
     PromptMutation,
     SecurityAgentResult,
     SecurityTestObjective,
     TargetProfile,
+    ThreatModel,
 )
 from llm_guardian.security_agent.mutator import PromptMutator
 from llm_guardian.security_agent.planner import AttackPlanner
@@ -45,11 +47,18 @@ class SecurityAgent:
     ) -> SecurityAgentResult:
         """Run one deterministic local security-agent loop with optional bounded mutation retries."""
 
-        plan = self._planner.plan(
+        threat_model = self._planner.build_threat_model(
+            target_profile=target_profile,
+            objective=objective,
+        )
+        attack_campaign = self._planner.create_campaign(
+            threat_model=threat_model,
             target_profile=target_profile,
             objective=objective,
             attack_library=attacks,
+            max_mutations_per_attack=self._max_mutations_per_attack,
         )
+        plan = attack_campaign.attack_plan
         attempts, prompt_mutations = self._execute_with_optional_mutations(
             plan=plan,
             attack_library=attacks,
@@ -73,6 +82,8 @@ class SecurityAgent:
             target_profile=target_profile,
             objective=objective,
             attack_plan=plan,
+            threat_model=threat_model,
+            attack_campaign=attack_campaign,
             attempts=attempts,
             findings=findings,
             prompt_mutations=prompt_mutations,

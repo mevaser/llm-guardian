@@ -1,4 +1,5 @@
 from llm_guardian.security_agent.models import (
+    AttackCampaign,
     AttackAttempt,
     AttackPlan,
     Observation,
@@ -6,6 +7,7 @@ from llm_guardian.security_agent.models import (
     SecurityAgentResult,
     SecurityTestObjective,
     TargetProfile,
+    ThreatModel,
     Trajectory,
     Verdict,
 )
@@ -51,6 +53,39 @@ def build_result() -> SecurityAgentResult:
         selected_attack_ids=["PI-001", "JB-001"],
         strategy_notes=["Deterministic reporting test plan."],
         budget={"max_total_attempts": 3, "max_attempts_per_attack": 2},
+    )
+    threat_model = ThreatModel(
+        target_name="demo-assistant",
+        target_type="generic_chatbot",
+        authorization_scope="local_demo",
+        capabilities=[],
+        risk_surfaces=[],
+        allowed_test_categories=["prompt_injection", "jailbreak"],
+        forbidden_actions=["external_system_access", "credential_extraction", "real_side_effects"],
+        assets_at_risk=["system prompt", "conversation context"],
+        trust_boundaries=["user prompt to target response"],
+        assumptions=["Target is a local deterministic demo."],
+        safety_constraints=["No external API calls."],
+        threat_categories_in_scope=["prompt_injection", "jailbreak"],
+        rationale=["Prompt injection and jailbreak attacks are in scope for generic chatbots."],
+    )
+    campaign = AttackCampaign(
+        campaign_id="campaign-demo-assistant",
+        campaign_name="Deterministic campaign for demo-assistant",
+        target_name="demo-assistant",
+        target_type="generic_chatbot",
+        threat_model=threat_model,
+        attack_plan=attack_plan,
+        selected_attack_ids=["PI-001", "JB-001"],
+        selected_categories=["prompt_injection", "jailbreak"],
+        planning_rationale=["Deterministic reporting test plan."],
+        attack_ordering_rationale="Selected attacks run in deterministic attack library order.",
+        retry_policy={"stop_on_success": False, "max_attempts_per_attack": 2, "max_mutations_per_attack": 1},
+        mutation_budget=1,
+        max_attempts_per_attack=2,
+        safety_mode="strict",
+        total_planned_attacks=2,
+        deterministic_metadata={"planned_attack_count": 2},
     )
     attempts = [
         AttackAttempt(
@@ -120,6 +155,8 @@ def build_result() -> SecurityAgentResult:
         target_profile=target_profile,
         objective=objective,
         attack_plan=attack_plan,
+        threat_model=threat_model,
+        attack_campaign=campaign,
         attempts=attempts,
         findings=[],
         prompt_mutations=prompt_mutations,
@@ -162,6 +199,10 @@ def test_json_report_is_serializable_and_deterministic() -> None:
 
     assert first == second
     assert first["target_profile"]["metadata"]["target_name"] == "demo-assistant"
+    assert first["threat_model"]["target_name"] == "demo-assistant"
+    assert first["threat_model"]["threat_categories_in_scope"] == ["prompt_injection", "jailbreak"]
+    assert first["attack_campaign"]["campaign_id"] == "campaign-demo-assistant"
+    assert first["attack_campaign"]["retry_policy"]["max_mutations_per_attack"] == 1
     assert first["objective"]["goal"] == "Exercise deterministic reporting."
     assert first["summary"]["total_attempts"] == 3
     assert first["summary"]["successful_attempts"] == 2
@@ -186,6 +227,10 @@ def test_markdown_report_is_deterministic_and_includes_required_sections() -> No
     assert first == second
     assert "# LLM Guardian Security Agent Report" in first
     assert "## Target Profile" in first
+    assert "## Threat Model" in first
+    assert "Threat categories in scope: prompt_injection, jailbreak" in first
+    assert "## Attack Campaign" in first
+    assert "Planned attacks: 2" in first
     assert "## Objective" in first
     assert "## Summary" in first
     assert "## Findings" in first

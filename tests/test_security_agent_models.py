@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from llm_guardian.security_agent.models import (
+    AttackCampaign,
     AttackAttempt,
     AttackPlan,
     Observation,
@@ -10,6 +11,7 @@ from llm_guardian.security_agent.models import (
     SecurityFinding,
     SecurityTestObjective,
     TargetProfile,
+    ThreatModel,
     Trajectory,
     Verdict,
 )
@@ -211,3 +213,59 @@ def test_attack_plan_contains_expected_nested_objects() -> None:
     assert attack_plan.target_profile.target_type == "rag_app"
     assert attack_plan.objective.goal == "Exercise deterministic security planning."
     assert attack_plan.budget["max_total_attempts"] == 3
+
+
+def test_threat_model_and_attack_campaign_models_instantiate_correctly() -> None:
+    target_profile = build_target_profile(metadata={"target_name": "demo-rag"})
+    objective = build_objective()
+    threat_model = ThreatModel(
+        target_name="demo-rag",
+        target_type="rag_app",
+        authorization_scope="local_demo",
+        capabilities=["retrieval"],
+        available_tools=[],
+        risk_surfaces=["rag"],
+        allowed_test_categories=["rag_injection", "prompt_injection", "jailbreak"],
+        forbidden_actions=["external_system_access"],
+        assets_at_risk=["retrieved context"],
+        trust_boundaries=["retrieval boundary"],
+        assumptions=["Target is a local deterministic demo."],
+        safety_constraints=["No external API calls."],
+        threat_categories_in_scope=["rag_injection", "prompt_injection"],
+        rationale=["Retrieval surfaces can carry untrusted instructions."],
+    )
+    attack_plan = AttackPlan(
+        target_profile=target_profile,
+        objective=objective,
+        selected_categories=["rag_injection", "prompt_injection"],
+        selected_attack_ids=["RI-001", "PI-001"],
+        strategy_notes=["Selected deterministic attacks."],
+        budget={"max_total_attempts": 3, "max_attempts_per_attack": 2},
+    )
+    campaign = AttackCampaign(
+        campaign_id="campaign-demo-rag",
+        campaign_name="Deterministic campaign for demo-rag",
+        target_name="demo-rag",
+        target_type="rag_app",
+        threat_model=threat_model,
+        attack_plan=attack_plan,
+        selected_attack_ids=["RI-001", "PI-001"],
+        selected_categories=["rag_injection", "prompt_injection"],
+        excluded_categories=["jailbreak"],
+        excluded_attack_ids=["JB-001"],
+        planning_rationale=["Applied objective category filter."],
+        attack_ordering_rationale="Attacks run in deterministic library order.",
+        retry_policy={"stop_on_success": True},
+        mutation_budget=1,
+        max_attempts_per_attack=2,
+        safety_mode="strict",
+        total_planned_attacks=2,
+        deterministic_metadata={"planned_attack_count": 2},
+    )
+
+    assert threat_model.target_name == "demo-rag"
+    assert threat_model.threat_categories_in_scope == ["rag_injection", "prompt_injection"]
+    assert campaign.threat_model is threat_model
+    assert campaign.attack_plan is attack_plan
+    assert campaign.mutation_budget == 1
+    assert campaign.total_planned_attacks == 2

@@ -214,3 +214,69 @@ def test_attack_planner_includes_strategy_notes_for_selection_reasons() -> None:
 
     assert any("target type" in note.lower() for note in plan.strategy_notes)
     assert any("capabilities" in note.lower() or "risk surfaces" in note.lower() for note in plan.strategy_notes)
+
+
+def test_attack_planner_builds_threat_model_from_target_profile_and_objective() -> None:
+    planner = AttackPlanner()
+    target_profile = build_target_profile(
+        target_type="tool_using_agent",
+        capabilities=["tools"],
+        risk_surfaces=["email"],
+        allowed_categories=["tool_abuse", "prompt_injection", "jailbreak"],
+    )
+    target_profile.metadata["target_name"] = "demo-tool-agent"
+    target_profile.metadata["available_tools"] = ["simulated_email_tool"]
+
+    threat_model = planner.build_threat_model(
+        target_profile=target_profile,
+        objective=build_objective(allowed_categories=["tool_abuse"]),
+    )
+
+    assert threat_model.target_name == "demo-tool-agent"
+    assert threat_model.target_type == "tool_using_agent"
+    assert threat_model.available_tools == ["simulated_email_tool"]
+    assert threat_model.threat_categories_in_scope == ["tool_abuse"]
+    assert "external_system_access" in threat_model.forbidden_actions
+    assert any("tool" in item.lower() for item in threat_model.rationale)
+
+
+def test_attack_planner_creates_campaign_with_filtered_plan_and_retry_budget() -> None:
+    planner = AttackPlanner()
+    target_profile = build_target_profile(
+        target_type="tool_using_agent",
+        capabilities=["tools"],
+        risk_surfaces=["email"],
+        allowed_categories=["tool_abuse", "prompt_injection"],
+    )
+    target_profile.metadata["target_name"] = "demo-tool-agent"
+    objective = build_objective(allowed_categories=["tool_abuse"], max_total_attempts=2)
+    attack_metadata = [
+        {"id": "TA-001", "category": "tool_abuse"},
+        {"id": "PI-001", "category": "prompt_injection"},
+        {"id": "JB-001", "category": "jailbreak"},
+    ]
+    threat_model = planner.build_threat_model(target_profile=target_profile, objective=objective)
+
+    campaign = planner.create_campaign(
+        threat_model=threat_model,
+        target_profile=target_profile,
+        objective=objective,
+        attack_library=attack_metadata,
+        max_mutations_per_attack=1,
+    )
+
+    assert campaign.attack_plan.selected_attack_ids == ["TA-001"]
+    assert campaign.selected_attack_ids == ["TA-001"]
+    assert campaign.selected_categories == ["tool_abuse"]
+    assert campaign.excluded_categories == ["prompt_injection", "jailbreak"]
+    assert campaign.excluded_attack_ids == ["PI-001", "JB-001"]
+    assert campaign.retry_policy == {
+        "stop_on_success": True,
+        "max_attempts_per_attack": 2,
+        "max_mutations_per_attack": 1,
+    }
+    assert campaign.mutation_budget == 1
+    assert campaign.max_attempts_per_attack == 2
+    assert campaign.safety_mode == "strict"
+    assert campaign.total_planned_attacks == 1
+    assert campaign.attack_ordering_rationale == "Selected attacks run in deterministic attack library order."

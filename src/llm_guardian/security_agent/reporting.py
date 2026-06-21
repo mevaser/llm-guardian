@@ -29,6 +29,10 @@ class SecurityAgentJsonReportBuilder:
         return {
             "target_profile": result.target_profile.model_dump(mode="json"),
             "objective": result.objective.model_dump(mode="json"),
+            "threat_model": result.threat_model.model_dump(mode="json") if result.threat_model is not None else None,
+            "attack_campaign": (
+                result.attack_campaign.model_dump(mode="json") if result.attack_campaign is not None else None
+            ),
             "attack_plan": result.attack_plan.model_dump(mode="json") if result.attack_plan is not None else None,
             "summary": {
                 "objective": result.objective.goal,
@@ -102,6 +106,8 @@ class SecurityAgentMarkdownReportBuilder:
         payload = self._json_builder.build(result=result, attack_library=attack_library)
         summary = payload["summary"]
         findings = payload["findings"]
+        threat_model = payload.get("threat_model")
+        attack_campaign = payload.get("attack_campaign")
 
         lines = [
             "# LLM Guardian Security Agent Report",
@@ -111,6 +117,14 @@ class SecurityAgentMarkdownReportBuilder:
             f"- Target name: `{payload['target_profile']['metadata'].get('target_name', 'unknown')}`",
             f"- Target type: `{payload['target_profile']['target_type']}`",
             f"- Authorization scope: `{payload['target_profile']['authorization_scope']}`",
+            "",
+            "## Threat Model",
+            "",
+            *self._render_threat_model_lines(threat_model),
+            "",
+            "## Attack Campaign",
+            "",
+            *self._render_attack_campaign_lines(attack_campaign),
             "",
             "## Objective",
             "",
@@ -181,6 +195,34 @@ class SecurityAgentMarkdownReportBuilder:
         if not categories:
             return "not restricted"
         return ", ".join(categories)
+
+    @staticmethod
+    def _render_plain_list(values: list[str]) -> str:
+        if not values:
+            return "none"
+        return ", ".join(values)
+
+    def _render_threat_model_lines(self, threat_model: Any) -> list[str]:
+        if not isinstance(threat_model, dict):
+            return ["Threat model was not captured for this result."]
+        return [
+            f"- Target: `{threat_model['target_name']}` (`{threat_model['target_type']}`)",
+            f"- Threat categories in scope: {self._render_plain_list(threat_model['threat_categories_in_scope'])}",
+            f"- Assets at risk: {self._render_plain_list(threat_model['assets_at_risk'])}",
+            f"- Trust boundaries: {self._render_plain_list(threat_model['trust_boundaries'])}",
+            f"- Safety constraints: {self._render_plain_list(threat_model['safety_constraints'])}",
+        ]
+
+    def _render_attack_campaign_lines(self, attack_campaign: Any) -> list[str]:
+        if not isinstance(attack_campaign, dict):
+            return ["Attack campaign was not captured for this result."]
+        return [
+            f"- Campaign ID: `{attack_campaign['campaign_id']}`",
+            f"- Selected categories: {self._render_plain_list(attack_campaign['selected_categories'])}",
+            f"- Planned attacks: {attack_campaign['total_planned_attacks']}",
+            f"- Mutation budget: {attack_campaign['mutation_budget']}",
+            f"- Ordering: {attack_campaign['attack_ordering_rationale']}",
+        ]
 
     @staticmethod
     def _build_attempt_id(attempt: dict[str, Any]) -> str:

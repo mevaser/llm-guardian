@@ -5,6 +5,7 @@ from llm_guardian.security_agent.agent import SecurityAgent
 from llm_guardian.security_agent.executor import AttackExecutor
 from llm_guardian.security_agent.findings import SecurityFindingBuilder
 from llm_guardian.security_agent.models import (
+    AttackCampaign,
     AttackAttempt,
     AttackPlan,
     Observation,
@@ -13,6 +14,7 @@ from llm_guardian.security_agent.models import (
     SecurityFinding,
     SecurityTestObjective,
     TargetProfile,
+    ThreatModel,
     Trajectory,
     Verdict,
 )
@@ -25,6 +27,7 @@ from llm_guardian.security_agent.reporting import (
 
 __all__ = [
     "AdapterExecutionResult",
+    "AttackCampaign",
     "AttackAttempt",
     "SecurityAgent",
     "AttackExecutor",
@@ -42,6 +45,7 @@ __all__ = [
     "SecurityTestObjective",
     "TargetAdapter",
     "TargetProfile",
+    "ThreatModel",
     "Trajectory",
     "Verdict",
 ]
