@@ -45,6 +45,8 @@ def test_security_agent_models_instantiate_correctly() -> None:
         attempt_index=1,
         prompt="Test prompt",
         mutation_strategy=None,
+        source_prompt=None,
+        mutation_reason_summary=None,
         response=None,
     )
     mutation = PromptMutation(
@@ -67,15 +69,19 @@ def test_security_agent_models_instantiate_correctly() -> None:
         objective=objective,
         attempts=[attack_attempt],
         findings=[{"attack_id": "RI-001", "status": "planned"}],
+        prompt_mutations=[mutation],
         summary="One attempt planned.",
         risk_summary={"planned_attack_count": 1},
     )
 
     assert attack_attempt.evidence == []
     assert attack_attempt.trace == []
+    assert attack_attempt.source_prompt is None
+    assert attack_attempt.mutation_reason_summary is None
     assert mutation.safety_flags == []
     assert attack_plan.selected_attack_ids == ["RI-001", "PI-001"]
     assert result.attempts[0].attack_id == "RI-001"
+    assert result.prompt_mutations[0].mutation_type == "paraphrase"
 
 
 def test_security_agent_model_defaults_are_isolated() -> None:
@@ -84,6 +90,8 @@ def test_security_agent_model_defaults_are_isolated() -> None:
         attempt_index=1,
         prompt="Prompt one",
         mutation_strategy=None,
+        source_prompt=None,
+        mutation_reason_summary=None,
         response=None,
     )
     second = AttackAttempt(
@@ -91,6 +99,8 @@ def test_security_agent_model_defaults_are_isolated() -> None:
         attempt_index=1,
         prompt="Prompt two",
         mutation_strategy=None,
+        source_prompt=None,
+        mutation_reason_summary=None,
         response=None,
     )
 
