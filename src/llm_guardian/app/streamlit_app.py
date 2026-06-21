@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from llm_guardian.attacks.loader import load_attack_library
+from llm_guardian.app.streamlit_state import (
+    LATEST_SCAN_JSON_EXPORT_KEY,
+    LATEST_SCAN_MARKDOWN_EXPORT_KEY,
+    LATEST_SCAN_REPORT_KEY,
+    ensure_session_state,
+    store_scan_state,
+)
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
 from llm_guardian.models import AttackResult, ScanReport
-from llm_guardian.runner.scan_service import (
-    render_report_json,
-    render_report_markdown,
-    run_offline_scan,
-)
+from llm_guardian.runner.scan_service import run_offline_scan
 from llm_guardian.targets.registry import list_targets
 
 try:
@@ -123,6 +126,7 @@ def main() -> None:
         "This demo scans only local intentionally vulnerable targets. "
         "It does not test real third-party systems."
     )
+    ensure_session_state(st.session_state)
 
     targets = list_targets()
     category_options = _load_category_options()
@@ -137,20 +141,23 @@ def main() -> None:
         )
         run_requested = st.button("Run scan", type="primary", use_container_width=True)
 
-    if not run_requested:
+    if run_requested:
+        with st.spinner("Running deterministic offline scan..."):
+            report = run_offline_scan(
+                target_name=target_name,
+                categories=selected_categories or None,
+            )
+        store_scan_state(st.session_state, report)
+
+    report = st.session_state[LATEST_SCAN_REPORT_KEY]
+    if report is None:
         st.info("Select a target and optional category filter, then run a scan.")
         return
 
-    with st.spinner("Running deterministic offline scan..."):
-        report = run_offline_scan(
-            target_name=target_name,
-            categories=selected_categories or None,
-        )
-
     _render_report(report)
 
-    json_report = render_report_json(report)
-    markdown_report = render_report_markdown(report)
+    json_report = st.session_state[LATEST_SCAN_JSON_EXPORT_KEY]
+    markdown_report = st.session_state[LATEST_SCAN_MARKDOWN_EXPORT_KEY]
 
     download_columns = st.columns(2)
     download_columns[0].download_button(
