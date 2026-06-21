@@ -51,6 +51,65 @@ class AttackPlan(StrictBaseModel):
     budget: dict[str, int] = Field(default_factory=dict)
 
 
+class ThreatModel(StrictBaseModel):
+    target_name: str
+    target_type: str
+    authorization_scope: str
+    capabilities: list[str] = Field(default_factory=list)
+    available_tools: list[str] = Field(default_factory=list)
+    risk_surfaces: list[str] = Field(default_factory=list)
+    allowed_test_categories: list[str] = Field(default_factory=list)
+    forbidden_actions: list[str] = Field(default_factory=list)
+    assets_at_risk: list[str] = Field(default_factory=list)
+    trust_boundaries: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    safety_constraints: list[str] = Field(default_factory=list)
+    threat_categories_in_scope: list[str] = Field(default_factory=list)
+    rationale: list[str] = Field(default_factory=list)
+
+    @field_validator("target_name", "target_type", "authorization_scope")
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class AttackCampaign(StrictBaseModel):
+    campaign_id: str
+    campaign_name: str
+    target_name: str
+    target_type: str
+    threat_model: ThreatModel
+    attack_plan: AttackPlan
+    selected_attack_ids: list[str] = Field(default_factory=list)
+    selected_categories: list[str] = Field(default_factory=list)
+    excluded_categories: list[str] = Field(default_factory=list)
+    excluded_attack_ids: list[str] = Field(default_factory=list)
+    planning_rationale: list[str] = Field(default_factory=list)
+    attack_ordering_rationale: str
+    retry_policy: dict[str, Any] = Field(default_factory=dict)
+    mutation_budget: int = Field(ge=0)
+    max_attempts_per_attack: int = Field(ge=1)
+    safety_mode: str
+    total_planned_attacks: int = Field(ge=0)
+    deterministic_metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator(
+        "campaign_id",
+        "campaign_name",
+        "target_name",
+        "target_type",
+        "attack_ordering_rationale",
+        "safety_mode",
+    )
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
 class Trajectory(StrictBaseModel):
     attack_id: str
     attempt_id: str | None = None
@@ -228,6 +287,8 @@ class SecurityAgentResult(StrictBaseModel):
     target_profile: TargetProfile
     objective: SecurityTestObjective
     attack_plan: AttackPlan | None = None
+    threat_model: ThreatModel | None = None
+    attack_campaign: AttackCampaign | None = None
     attempts: list[AttackAttempt] = Field(default_factory=list)
     findings: list[SecurityFinding] = Field(default_factory=list)
     prompt_mutations: list[PromptMutation] = Field(default_factory=list)
