@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
-from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
+from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH, DEFAULT_TARGET_PROFILES_PATH
 from llm_guardian.models import AttackCategory, ScanReport
 from llm_guardian.runner.scan_service import (
     render_report_json,
@@ -24,6 +24,7 @@ from llm_guardian.security_agent import (
     TargetProfile,
 )
 from llm_guardian.security_agent.adapters import LocalTargetAdapter
+from llm_guardian.security_agent.target_profiles import TargetProfileLoadError, load_target_profile
 from llm_guardian.targets.registry import create_target, list_targets
 
 
@@ -141,6 +142,7 @@ def agent_scan(
     max_mutations_per_attack: int,
     output_format: str,
     output_file: Path | None,
+    target_profile_path: Path,
 ) -> int:
     try:
         selected_categories = _normalize_agent_scan_categories(
@@ -148,7 +150,13 @@ def agent_scan(
             categories_flags=categories_flags,
         )
         target_agent = create_target(target)
-        target_profile = _build_agent_scan_target_profile(target)
+        target_profile = load_target_profile(target_profile_path, target)
+    except TargetProfileLoadError as exc:
+        print(
+            f"Invalid target profile for target '{target}' in {target_profile_path}: {exc}",
+            file=sys.stderr,
+        )
+        return 1
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -303,6 +311,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_scan_parser.add_argument("--max-mutations-per-attack", type=int, default=0)
     agent_scan_parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
     agent_scan_parser.add_argument("--output-file", type=Path)
+    agent_scan_parser.add_argument("--target-profile", type=Path, default=DEFAULT_TARGET_PROFILES_PATH)
 
     report_parser = subparsers.add_parser("validate-report", help="Validate a structured report JSON file.")
     report_parser.add_argument("path", type=Path)
@@ -340,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_mutations_per_attack=args.max_mutations_per_attack,
                 output_format=args.output_format,
                 output_file=args.output_file,
+                target_profile_path=args.target_profile,
             )
         if args.command == "validate-report":
             return validate_report(args.path)

@@ -38,6 +38,7 @@ def test_agent_scan_json_stdout_is_serializable() -> None:
 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
+    assert payload["target_profile"]["target_name"] == "customer_support"
     assert payload["target_profile"]["metadata"]["target_name"] == "customer_support"
     assert payload["target_profile"]["authorization_scope"] == "local_demo_only"
     assert payload["summary"]["objective"] == "Run a deterministic local security-agent scan."
@@ -199,6 +200,69 @@ def test_agent_scan_repeated_json_runs_remain_deterministic() -> None:
     assert normalize_agent_scan_payload(json.loads(first.stdout)) == normalize_agent_scan_payload(
         json.loads(second.stdout)
     )
+
+
+def test_agent_scan_uses_yaml_target_profile_contract() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "tool_agent",
+        "--category",
+        "tool_abuse",
+        "--max-total-attempts",
+        "2",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+
+    assert payload["target_profile"]["target_name"] == "tool_agent"
+    assert payload["target_profile"]["available_tools"] == [
+        "simulated_email_tool",
+        "simulated_export_tool",
+        "simulated_ticket_tool",
+    ]
+    assert payload["target_profile"]["forbidden_actions"] == [
+        "external_system_access",
+        "credential_extraction",
+        "real_side_effects",
+        "third_party_target_testing",
+        "send_external_email",
+        "export_customer_data",
+    ]
+    assert payload["threat_model"]["available_tools"] == payload["target_profile"]["available_tools"]
+    assert payload["threat_model"]["forbidden_actions"] == payload["target_profile"]["forbidden_actions"]
+    assert payload["attack_campaign"]["target_name"] == "tool_agent"
+    assert payload["attack_campaign"]["selected_categories"] == ["tool_abuse"]
+
+
+def test_agent_scan_rejects_invalid_target_profile_file(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profiles.yaml"
+    profile_path.write_text(
+        """
+targets:
+  - id: customer_support
+    target_name: customer_support
+""",
+        encoding="utf-8",
+    )
+
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "customer_support",
+        "--target-profile",
+        str(profile_path),
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 1
+    assert "Invalid target profile for target 'customer_support'" in result.stderr
+    assert str(profile_path) in result.stderr
+    assert "target_type" in result.stderr
 
 
 def test_baseline_scan_command_behavior_remains_unchanged() -> None:

@@ -24,6 +24,11 @@ from llm_guardian.security_agent.reporting import (
     SecurityAgentJsonReportBuilder,
     SecurityAgentMarkdownReportBuilder,
 )
+from llm_guardian.security_agent.target_profiles import (
+    TargetProfileLoadError,
+    load_target_profile,
+    load_target_profiles,
+)
 
 __all__ = [
     "AdapterExecutionResult",
@@ -44,8 +49,11 @@ __all__ = [
     "SecurityAgentMarkdownReportBuilder",
     "SecurityTestObjective",
     "TargetAdapter",
+    "TargetProfileLoadError",
     "TargetProfile",
     "ThreatModel",
     "Trajectory",
     "Verdict",
+    "load_target_profile",
+    "load_target_profiles",
 ]

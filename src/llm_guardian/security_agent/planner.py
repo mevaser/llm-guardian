@@ -129,9 +129,43 @@ class AttackPlanner:
 
         threat_categories = self._resolve_threat_categories(target_profile=target_profile, objective=objective)
         target_name = self._resolve_target_name(target_profile)
-        available_tools = self._read_metadata_list(target_profile.metadata.get("available_tools"))
-        assets_at_risk = self._derive_assets_at_risk(target_profile=target_profile)
-        trust_boundaries = self._derive_trust_boundaries(target_profile=target_profile)
+        available_tools = self._resolve_profile_list(
+            target_profile.available_tools,
+            self._read_metadata_list(target_profile.metadata.get("available_tools")),
+        )
+        forbidden_actions = self._resolve_profile_list(
+            target_profile.forbidden_actions,
+            [
+                "external_system_access",
+                "credential_extraction",
+                "real_side_effects",
+                "third_party_target_testing",
+            ],
+        )
+        assets_at_risk = self._resolve_profile_list(
+            target_profile.assets_at_risk,
+            self._derive_assets_at_risk(target_profile=target_profile),
+        )
+        trust_boundaries = self._resolve_profile_list(
+            target_profile.trust_boundaries,
+            self._derive_trust_boundaries(target_profile=target_profile),
+        )
+        assumptions = self._resolve_profile_list(
+            target_profile.assumptions,
+            [
+                "Target is a local deterministic demo.",
+                "Attack execution must not call real third-party systems.",
+                "Tool actions are simulated only.",
+            ],
+        )
+        safety_constraints = self._resolve_profile_list(
+            target_profile.safety_constraints,
+            [
+                "No external API calls.",
+                "No credential extraction.",
+                "No real emails, exports, writes, or network side effects.",
+            ],
+        )
 
         return ThreatModel(
             target_name=target_name,
@@ -141,24 +175,11 @@ class AttackPlanner:
             available_tools=available_tools,
             risk_surfaces=list(target_profile.risk_surfaces),
             allowed_test_categories=list(target_profile.allowed_categories),
-            forbidden_actions=[
-                "external_system_access",
-                "credential_extraction",
-                "real_side_effects",
-                "third_party_target_testing",
-            ],
+            forbidden_actions=forbidden_actions,
             assets_at_risk=assets_at_risk,
             trust_boundaries=trust_boundaries,
-            assumptions=[
-                "Target is a local deterministic demo.",
-                "Attack execution must not call real third-party systems.",
-                "Tool actions are simulated only.",
-            ],
-            safety_constraints=[
-                "No external API calls.",
-                "No credential extraction.",
-                "No real emails, exports, writes, or network side effects.",
-            ],
+            assumptions=assumptions,
+            safety_constraints=safety_constraints,
             threat_categories_in_scope=threat_categories,
             rationale=self._build_threat_rationale(
                 target_profile=target_profile,
@@ -229,6 +250,8 @@ class AttackPlanner:
                 "max_total_attempts": objective.max_total_attempts,
                 "planned_attack_count": len(attack_plan.selected_attack_ids),
                 "available_attack_count": len(normalized_attacks),
+                "target_profile_retry_policy": dict(target_profile.retry_policy),
+                "target_profile_mutation_policy": dict(target_profile.mutation_policy),
             },
         )
 
@@ -304,6 +327,8 @@ class AttackPlanner:
 
     @staticmethod
     def _resolve_target_name(target_profile: TargetProfile) -> str:
+        if target_profile.target_name is not None and target_profile.target_name.strip():
+            return target_profile.target_name.strip()
         for key in ("target_name", "target_id", "name", "id"):
             value = target_profile.metadata.get(key)
             if isinstance(value, str) and value.strip():
@@ -319,6 +344,10 @@ class AttackPlanner:
         if isinstance(value, str) and value.strip():
             return [value.strip()]
         return []
+
+    @staticmethod
+    def _resolve_profile_list(primary: list[str], fallback: list[str]) -> list[str]:
+        return list(primary) if primary else list(fallback)
 
     @staticmethod
     def _derive_assets_at_risk(*, target_profile: TargetProfile) -> list[str]:
