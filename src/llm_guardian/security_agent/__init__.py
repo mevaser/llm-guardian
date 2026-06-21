@@ -11,6 +11,7 @@ from llm_guardian.security_agent.models import (
     SecurityTestObjective,
     TargetProfile,
 )
+from llm_guardian.security_agent.mutator import PromptMutator
 from llm_guardian.security_agent.planner import AttackPlanner
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "AttackPlanner",
     "LocalTargetAdapter",
     "PromptMutation",
+    "PromptMutator",
     "SecurityAgentResult",
     "SecurityTestObjective",
     "TargetAdapter",
