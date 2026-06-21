@@ -32,7 +32,7 @@ class SecurityFindingBuilder:
         successful_attempts_by_attack: dict[str, list[AttackAttempt]] = {}
 
         for attempt in attempts:
-            if attempt.success is not True:
+            if not self._attempt_was_successful(attempt):
                 continue
             successful_attempts_by_attack.setdefault(attempt.attack_id, []).append(attempt)
 
@@ -201,3 +201,9 @@ class SecurityFindingBuilder:
             if attack_id.upper().startswith(prefix):
                 return category
         return "prompt_injection"
+
+    @staticmethod
+    def _attempt_was_successful(attempt: AttackAttempt) -> bool:
+        if attempt.verdict is not None:
+            return attempt.verdict.status == "success" and attempt.verdict.success is True
+        return attempt.success is True

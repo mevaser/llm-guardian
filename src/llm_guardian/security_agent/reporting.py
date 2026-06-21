@@ -35,15 +35,15 @@ class SecurityAgentJsonReportBuilder:
                 "total_attempts": result.risk_summary.get("total_attempts", len(result.attempts)),
                 "successful_attempts": result.risk_summary.get(
                     "successful_attempts",
-                    sum(1 for attempt in result.attempts if attempt.success is True),
+                    sum(1 for attempt in result.attempts if self._attempt_success(attempt) is True),
                 ),
                 "failed_attempts": result.risk_summary.get(
                     "failed_attempts",
-                    sum(1 for attempt in result.attempts if attempt.success is False),
+                    sum(1 for attempt in result.attempts if self._attempt_success(attempt) is False),
                 ),
                 "skipped_or_unknown_attempts": result.risk_summary.get(
                     "skipped_or_unknown_attempts",
-                    sum(1 for attempt in result.attempts if attempt.success is None),
+                    sum(1 for attempt in result.attempts if self._attempt_success(attempt) is None),
                 ),
                 "success_rate": result.risk_summary.get("success_rate", 0.0),
                 "mutation_strategies_used": mutation_strategies_used,
@@ -79,6 +79,12 @@ class SecurityAgentJsonReportBuilder:
             if value not in unique_values:
                 unique_values.append(value)
         return unique_values
+
+    @staticmethod
+    def _attempt_success(attempt: Any) -> bool | None:
+        if getattr(attempt, "verdict", None) is not None:
+            return attempt.verdict.success
+        return attempt.success
 
 
 class SecurityAgentMarkdownReportBuilder:
@@ -154,6 +160,7 @@ class SecurityAgentMarkdownReportBuilder:
                     f"- Attack ID: `{attempt['attack_id']}`",
                     f"- Attempt index: {attempt['attempt_index']}",
                     f"- Success: `{str(attempt['success']).lower()}`",
+                    f"- Verdict: `{self._render_verdict_status(attempt)}`",
                     f"- Mutation strategy: `{attempt['mutation_strategy'] or 'none'}`",
                     f"- Prompt: `{attempt['prompt']}`",
                     f"- Evidence count: {len(attempt['evidence'])}",
@@ -178,3 +185,12 @@ class SecurityAgentMarkdownReportBuilder:
     @staticmethod
     def _build_attempt_id(attempt: dict[str, Any]) -> str:
         return f"{attempt['attack_id']}-attempt-{attempt['attempt_index']}"
+
+    @staticmethod
+    def _render_verdict_status(attempt: dict[str, Any]) -> str:
+        verdict = attempt.get("verdict")
+        if isinstance(verdict, dict):
+            status = verdict.get("status")
+            if isinstance(status, str) and status.strip():
+                return status
+        return "legacy_success" if attempt.get("success") is True else "legacy_non_success"

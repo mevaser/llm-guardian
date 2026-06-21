@@ -7,11 +7,14 @@ from llm_guardian.security_agent.findings import SecurityFindingBuilder
 from llm_guardian.security_agent.models import (
     AttackAttempt,
     AttackPlan,
+    Observation,
     PromptMutation,
     SecurityAgentResult,
     SecurityFinding,
     SecurityTestObjective,
     TargetProfile,
+    Trajectory,
+    Verdict,
 )
 from llm_guardian.security_agent.mutator import PromptMutator
 from llm_guardian.security_agent.planner import AttackPlanner
@@ -28,6 +31,7 @@ __all__ = [
     "AttackPlan",
     "AttackPlanner",
     "LocalTargetAdapter",
+    "Observation",
     "PromptMutation",
     "PromptMutator",
     "SecurityAgentResult",
@@ -38,4 +42,6 @@ __all__ = [
     "SecurityTestObjective",
     "TargetAdapter",
     "TargetProfile",
+    "Trajectory",
+    "Verdict",
 ]

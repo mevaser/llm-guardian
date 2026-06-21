@@ -26,6 +26,10 @@ def normalize_agent_scan_payload(payload: dict[str, object]) -> dict[str, object
     for attempt in normalized.get("attempt_history", []):
         for trace_event in attempt.get("trace", []):
             trace_event.pop("timestamp", None)
+        trajectory = attempt.get("trajectory")
+        if isinstance(trajectory, dict):
+            for trace_event in trajectory.get("trace_events", []):
+                trace_event.pop("timestamp", None)
     return normalized
 
 
