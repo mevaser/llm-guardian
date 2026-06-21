@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
 
 from llm_guardian.security_agent.adapters import TargetAdapter
 from llm_guardian.security_agent.executor import AttackExecutor
+from llm_guardian.security_agent.findings import SecurityFindingBuilder
 from llm_guardian.security_agent.models import (
     AttackAttempt,
     AttackPlan,
@@ -27,11 +27,13 @@ class SecurityAgent:
         planner: AttackPlanner | None = None,
         executor: AttackExecutor | None = None,
         mutator: PromptMutator | None = None,
+        finding_builder: SecurityFindingBuilder | None = None,
         max_mutations_per_attack: int = 0,
     ) -> None:
         self._planner = planner or AttackPlanner()
         self._executor = executor or AttackExecutor()
         self._mutator = mutator or PromptMutator()
+        self._finding_builder = finding_builder or SecurityFindingBuilder()
         self._max_mutations_per_attack = max(max_mutations_per_attack, 0)
 
     def run(
@@ -53,7 +55,13 @@ class SecurityAgent:
             attack_library=attacks,
             target_adapter=target_adapter,
         )
-        findings = self._build_findings(attempts)
+        findings = self._finding_builder.build(
+            attempts=attempts,
+            prompt_mutations=prompt_mutations,
+            attack_library=attacks,
+            target_profile=target_profile,
+            attack_plan=plan,
+        )
         risk_summary = self._build_risk_summary(attempts)
         summary = self._build_summary(
             target_profile=target_profile,
@@ -64,6 +72,7 @@ class SecurityAgent:
         return SecurityAgentResult(
             target_profile=target_profile,
             objective=objective,
+            attack_plan=plan,
             attempts=attempts,
             findings=findings,
             prompt_mutations=prompt_mutations,
@@ -142,35 +151,6 @@ class SecurityAgent:
                 current_attempt = mutated_attempt
 
         return attempts, prompt_mutations
-
-    @staticmethod
-    def _build_findings(attempts: list[AttackAttempt]) -> list[dict[str, Any]]:
-        findings: list[dict[str, Any]] = []
-        for attempt in attempts:
-            if attempt.success is not True:
-                continue
-            finding = {
-                "attack_id": attempt.attack_id,
-                "success": True,
-                "evidence": list(attempt.evidence),
-                "prompt": attempt.prompt,
-                "response_excerpt": SecurityAgent._build_response_excerpt(attempt.response),
-            }
-            if attempt.mutation_strategy is not None:
-                finding["attempt_index"] = attempt.attempt_index
-                finding["mutation_strategy"] = attempt.mutation_strategy
-                if attempt.source_prompt is not None:
-                    finding["source_prompt"] = attempt.source_prompt
-            findings.append(finding)
-        return findings
-
-    @staticmethod
-    def _build_response_excerpt(response: str | None, max_length: int = 160) -> str:
-        if response is None:
-            return ""
-        if len(response) <= max_length:
-            return response
-        return f"{response[: max_length - 3]}..."
 
     @staticmethod
     def _build_risk_summary(attempts: list[AttackAttempt]) -> dict[str, int | float]:

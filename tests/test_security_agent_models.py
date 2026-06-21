@@ -6,6 +6,7 @@ from llm_guardian.security_agent.models import (
     AttackPlan,
     PromptMutation,
     SecurityAgentResult,
+    SecurityFinding,
     SecurityTestObjective,
     TargetProfile,
 )
@@ -67,8 +68,22 @@ def test_security_agent_models_instantiate_correctly() -> None:
     result = SecurityAgentResult(
         target_profile=target_profile,
         objective=objective,
+        attack_plan=attack_plan,
         attempts=[attack_attempt],
-        findings=[{"attack_id": "RI-001", "status": "planned"}],
+        findings=[
+            SecurityFinding(
+                finding_id="finding-ri-001",
+                attack_id="RI-001",
+                attack_name="Reveal hidden instructions",
+                category="rag_injection",
+                severity="high",
+                target_name="demo-rag",
+                target_type="rag_app",
+                evidence_summary="Matched success indicator: hidden instructions exposed",
+                successful_attempt_ids=["RI-001-attempt-1"],
+                recommendation="Harden retrieval trust boundaries.",
+            )
+        ],
         prompt_mutations=[mutation],
         summary="One attempt planned.",
         risk_summary={"planned_attack_count": 1},
@@ -81,6 +96,8 @@ def test_security_agent_models_instantiate_correctly() -> None:
     assert mutation.safety_flags == []
     assert attack_plan.selected_attack_ids == ["RI-001", "PI-001"]
     assert result.attempts[0].attack_id == "RI-001"
+    assert result.attack_plan is not None
+    assert result.findings[0].finding_id == "finding-ri-001"
     assert result.prompt_mutations[0].mutation_type == "paraphrase"
 
 
