@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from llm_guardian.security_agent.adapters import TargetAdapter
 from llm_guardian.security_agent.executor import AttackExecutor
 from llm_guardian.security_agent.models import (
     AttackAttempt,
+    AttackPlan,
+    PromptMutation,
     SecurityAgentResult,
     SecurityTestObjective,
     TargetProfile,
 )
+from llm_guardian.security_agent.mutator import PromptMutator
 from llm_guardian.security_agent.planner import AttackPlanner
 
 
@@ -22,9 +26,13 @@ class SecurityAgent:
         self,
         planner: AttackPlanner | None = None,
         executor: AttackExecutor | None = None,
+        mutator: PromptMutator | None = None,
+        max_mutations_per_attack: int = 0,
     ) -> None:
         self._planner = planner or AttackPlanner()
         self._executor = executor or AttackExecutor()
+        self._mutator = mutator or PromptMutator()
+        self._max_mutations_per_attack = max(max_mutations_per_attack, 0)
 
     def run(
         self,
@@ -33,17 +41,17 @@ class SecurityAgent:
         attacks: list[object],
         target_adapter: TargetAdapter,
     ) -> SecurityAgentResult:
-        """Run one deterministic local security-agent loop without retries or mutation."""
+        """Run one deterministic local security-agent loop with optional bounded mutation retries."""
 
         plan = self._planner.plan(
             target_profile=target_profile,
             objective=objective,
             attack_library=attacks,
         )
-        attempts = self._executor.execute(
+        attempts, prompt_mutations = self._execute_with_optional_mutations(
             plan=plan,
-            adapter=target_adapter,
             attack_library=attacks,
+            target_adapter=target_adapter,
         )
         findings = self._build_findings(attempts)
         risk_summary = self._build_risk_summary(attempts)
@@ -58,9 +66,82 @@ class SecurityAgent:
             objective=objective,
             attempts=attempts,
             findings=findings,
+            prompt_mutations=prompt_mutations,
             summary=summary,
             risk_summary=risk_summary,
         )
+
+    def _execute_with_optional_mutations(
+        self,
+        *,
+        plan: AttackPlan,
+        attack_library: Iterable[object],
+        target_adapter: TargetAdapter,
+    ) -> tuple[list[AttackAttempt], list[PromptMutation]]:
+        metadata_by_id = self._index_attack_metadata(attack_library)
+        attempts: list[AttackAttempt] = []
+        prompt_mutations: list[PromptMutation] = []
+        max_total_attempts = plan.objective.max_total_attempts
+
+        for attack_id in plan.selected_attack_ids:
+            if len(attempts) >= max_total_attempts:
+                break
+
+            metadata = metadata_by_id.get(attack_id)
+            original_attempt = self._executor.execute_attempt(
+                attack_id=attack_id,
+                metadata=metadata,
+                adapter=target_adapter,
+                attempt_index=1,
+            )
+            attempts.append(original_attempt)
+
+            if original_attempt.success is True:
+                continue
+
+            if metadata is None:
+                continue
+
+            allowed_mutations = min(
+                self._max_mutations_per_attack,
+                max(plan.objective.max_attempts_per_attack - 1, 0),
+            )
+            if allowed_mutations <= 0:
+                continue
+
+            mutation_strategies = self._ordered_mutation_strategies(metadata)
+            if not mutation_strategies:
+                continue
+
+            current_attempt = original_attempt
+            for strategy in mutation_strategies[:allowed_mutations]:
+                if len(attempts) >= max_total_attempts:
+                    break
+
+                mutation = self._mutator.mutate(
+                    attack_id=attack_id,
+                    prompt=current_attempt.prompt,
+                    category=self._read_attack_value(metadata, "category"),
+                    failed_evidence=current_attempt.evidence,
+                    strategy=strategy,
+                )
+                prompt_mutations.append(mutation)
+                mutated_attempt = self._executor.execute_attempt(
+                    attack_id=attack_id,
+                    metadata=metadata,
+                    adapter=target_adapter,
+                    prompt_override=mutation.mutated_prompt,
+                    attempt_index=current_attempt.attempt_index + 1,
+                    mutation_strategy=mutation.mutation_type,
+                    source_prompt=mutation.source_prompt,
+                    mutation_reason_summary=mutation.reason_summary,
+                )
+                attempts.append(mutated_attempt)
+                if mutated_attempt.success is True:
+                    break
+                current_attempt = mutated_attempt
+
+        return attempts, prompt_mutations
 
     @staticmethod
     def _build_findings(attempts: list[AttackAttempt]) -> list[dict[str, Any]]:
@@ -68,15 +149,19 @@ class SecurityAgent:
         for attempt in attempts:
             if attempt.success is not True:
                 continue
-            findings.append(
-                {
-                    "attack_id": attempt.attack_id,
-                    "success": True,
-                    "evidence": list(attempt.evidence),
-                    "prompt": attempt.prompt,
-                    "response_excerpt": SecurityAgent._build_response_excerpt(attempt.response),
-                }
-            )
+            finding = {
+                "attack_id": attempt.attack_id,
+                "success": True,
+                "evidence": list(attempt.evidence),
+                "prompt": attempt.prompt,
+                "response_excerpt": SecurityAgent._build_response_excerpt(attempt.response),
+            }
+            if attempt.mutation_strategy is not None:
+                finding["attempt_index"] = attempt.attempt_index
+                finding["mutation_strategy"] = attempt.mutation_strategy
+                if attempt.source_prompt is not None:
+                    finding["source_prompt"] = attempt.source_prompt
+            findings.append(finding)
         return findings
 
     @staticmethod
@@ -102,6 +187,65 @@ class SecurityAgent:
             "skipped_or_unknown_attempts": skipped_or_unknown_attempts,
             "success_rate": success_rate,
         }
+
+    @staticmethod
+    def _ordered_mutation_strategies(metadata: object) -> list[str]:
+        category = SecurityAgent._read_attack_value(metadata, "category")
+        default_strategy_by_category = {
+            "rag_injection": "retrieved_document_wrapper",
+            "memory_poisoning": "memory_note_wrapper",
+            "tool_abuse": "indirect_framing",
+            "prompt_injection": "quoted_instruction",
+            "jailbreak": "role_framing",
+        }
+        ordered_strategies = [
+            default_strategy_by_category.get(
+                category.strip().lower() if category and category.strip() else "",
+                "rephrase_instruction",
+            ),
+            "rephrase_instruction",
+            "indirect_framing",
+            "role_framing",
+            "urgency_framing",
+            "formatting_noise",
+            "quoted_instruction",
+            "retrieved_document_wrapper",
+            "memory_note_wrapper",
+        ]
+        unique_strategies: list[str] = []
+        for strategy in ordered_strategies:
+            if strategy not in unique_strategies:
+                unique_strategies.append(strategy)
+        return unique_strategies
+
+    @staticmethod
+    def _index_attack_metadata(attack_library: Iterable[object]) -> dict[str, object]:
+        indexed: dict[str, object] = {}
+        for entry in attack_library:
+            attack_id = SecurityAgent._read_attack_value(entry, "id") or SecurityAgent._read_attack_value(
+                entry, "attack_id"
+            )
+            if attack_id is None or not attack_id.strip():
+                continue
+            normalized_attack_id = attack_id.strip()
+            if normalized_attack_id not in indexed:
+                indexed[normalized_attack_id] = entry
+        return indexed
+
+    @staticmethod
+    def _read_attack_value(entry: object, key: str) -> str | None:
+        if isinstance(entry, dict):
+            value = entry.get(key)
+        else:
+            value = getattr(entry, key, None)
+
+        if value is None:
+            return None
+        if hasattr(value, "value"):
+            value = value.value
+        if not isinstance(value, str):
+            value = str(value)
+        return value
 
     @staticmethod
     def _build_summary(

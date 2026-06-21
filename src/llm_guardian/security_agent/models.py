@@ -55,6 +55,8 @@ class AttackAttempt(StrictBaseModel):
     attempt_index: int = Field(ge=1)
     prompt: str
     mutation_strategy: str | None = None
+    source_prompt: str | None = None
+    mutation_reason_summary: str | None = None
     response: str | None = None
     trace: list[Any] = Field(default_factory=list)
     success: bool | None = None
@@ -67,7 +69,7 @@ class AttackAttempt(StrictBaseModel):
             raise ValueError("must be a non-empty string")
         return value
 
-    @field_validator("mutation_strategy", "response")
+    @field_validator("mutation_strategy", "source_prompt", "mutation_reason_summary", "response")
     @classmethod
     def validate_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -104,6 +106,7 @@ class SecurityAgentResult(StrictBaseModel):
     objective: SecurityTestObjective
     attempts: list[AttackAttempt] = Field(default_factory=list)
     findings: list[dict[str, Any]] = Field(default_factory=list)
+    prompt_mutations: list[PromptMutation] = Field(default_factory=list)
     summary: str
     risk_summary: dict[str, Any] = Field(default_factory=dict)
 

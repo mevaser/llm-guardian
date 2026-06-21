@@ -30,47 +30,69 @@ class AttackExecutor:
 
         for attack_id in plan.selected_attack_ids[:max_total_attempts]:
             metadata = metadata_by_id.get(attack_id)
-            if metadata is None:
-                attempts.append(self._build_skipped_attempt(attack_id=attack_id, reason="attack metadata was not found"))
-                continue
-
-            prompt = self._read_text_value(metadata, "prompt")
-            if prompt is None or not prompt.strip():
-                attempts.append(
-                    self._build_skipped_attempt(attack_id=attack_id, reason="attack prompt metadata was missing")
+            attempts.append(
+                self.execute_attempt(
+                    attack_id=attack_id,
+                    metadata=metadata,
+                    adapter=adapter,
                 )
-                continue
-
-            execution_result = adapter.execute(prompt.strip(), attack_id=attack_id)
-            attack_case, evaluation_skip_reason = self._build_attack_case(metadata=metadata, prompt=prompt.strip())
-
-            if attack_case is None:
-                attempts.append(
-                    AttackAttempt(
-                        attack_id=attack_id,
-                        attempt_index=1,
-                        prompt=prompt.strip(),
-                        mutation_strategy=None,
-                        response=execution_result.response,
-                        trace=execution_result.trace,
-                        success=None,
-                        evidence=[f"Evaluation skipped because {evaluation_skip_reason}."],
-                    )
-                )
-                continue
-
-            evaluation_result = self._evaluator.evaluate(
-                target_name=adapter.target_name,
-                attack=attack_case,
-                response=TargetResponse(
-                    content=execution_result.response,
-                    metadata=execution_result.metadata,
-                    trace=execution_result.trace,
-                ),
             )
-            attempts.append(self._build_attempt_from_evaluation(evaluation_result))
 
         return attempts
+
+    def execute_attempt(
+        self,
+        *,
+        attack_id: str,
+        metadata: object | None,
+        adapter: TargetAdapter,
+        prompt_override: str | None = None,
+        attempt_index: int = 1,
+        mutation_strategy: str | None = None,
+        source_prompt: str | None = None,
+        mutation_reason_summary: str | None = None,
+    ) -> AttackAttempt:
+        if metadata is None:
+            return self._build_skipped_attempt(attack_id=attack_id, reason="attack metadata was not found")
+
+        prompt = prompt_override if prompt_override is not None else self._read_text_value(metadata, "prompt")
+        if prompt is None or not prompt.strip():
+            return self._build_skipped_attempt(attack_id=attack_id, reason="attack prompt metadata was missing")
+
+        normalized_prompt = prompt.strip()
+        execution_result = adapter.execute(normalized_prompt, attack_id=attack_id)
+        attack_case, evaluation_skip_reason = self._build_attack_case(metadata=metadata, prompt=normalized_prompt)
+
+        if attack_case is None:
+            return AttackAttempt(
+                attack_id=attack_id,
+                attempt_index=attempt_index,
+                prompt=normalized_prompt,
+                mutation_strategy=mutation_strategy,
+                source_prompt=source_prompt,
+                mutation_reason_summary=mutation_reason_summary,
+                response=execution_result.response,
+                trace=execution_result.trace,
+                success=None,
+                evidence=[f"Evaluation skipped because {evaluation_skip_reason}."],
+            )
+
+        evaluation_result = self._evaluator.evaluate(
+            target_name=adapter.target_name,
+            attack=attack_case,
+            response=TargetResponse(
+                content=execution_result.response,
+                metadata=execution_result.metadata,
+                trace=execution_result.trace,
+            ),
+        )
+        return self._build_attempt_from_evaluation(
+            evaluation_result,
+            attempt_index=attempt_index,
+            mutation_strategy=mutation_strategy,
+            source_prompt=source_prompt,
+            mutation_reason_summary=mutation_reason_summary,
+        )
 
     @staticmethod
     def _resolve_max_total_attempts(plan: AttackPlan) -> int:
@@ -165,12 +187,21 @@ class AttackExecutor:
         return attack_case, None
 
     @staticmethod
-    def _build_attempt_from_evaluation(result: AttackResult) -> AttackAttempt:
+    def _build_attempt_from_evaluation(
+        result: AttackResult,
+        *,
+        attempt_index: int = 1,
+        mutation_strategy: str | None = None,
+        source_prompt: str | None = None,
+        mutation_reason_summary: str | None = None,
+    ) -> AttackAttempt:
         return AttackAttempt(
             attack_id=result.attack_id,
-            attempt_index=1,
+            attempt_index=attempt_index,
             prompt=result.prompt,
-            mutation_strategy=None,
+            mutation_strategy=mutation_strategy,
+            source_prompt=source_prompt,
+            mutation_reason_summary=mutation_reason_summary,
             response=result.response,
             trace=result.trace,
             success=result.success,
