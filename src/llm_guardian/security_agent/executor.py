@@ -197,6 +197,7 @@ class AttackExecutor:
     ) -> AttackAttempt:
         return AttackAttempt(
             attack_id=result.attack_id,
+            attempt_id=f"{result.attack_id}-attempt-{attempt_index}",
             attempt_index=attempt_index,
             prompt=result.prompt,
             mutation_strategy=mutation_strategy,
@@ -212,6 +213,7 @@ class AttackExecutor:
     def _build_skipped_attempt(*, attack_id: str, reason: str) -> AttackAttempt:
         return AttackAttempt(
             attack_id=attack_id,
+            attempt_id=f"{attack_id}-attempt-1",
             attempt_index=1,
             prompt=f"Execution skipped for attack_id='{attack_id}'.",
             mutation_strategy=None,

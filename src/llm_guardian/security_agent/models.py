@@ -52,6 +52,7 @@ class AttackPlan(StrictBaseModel):
 
 class AttackAttempt(StrictBaseModel):
     attack_id: str
+    attempt_id: str | None = None
     attempt_index: int = Field(ge=1)
     prompt: str
     mutation_strategy: str | None = None
@@ -69,7 +70,47 @@ class AttackAttempt(StrictBaseModel):
             raise ValueError("must be a non-empty string")
         return value
 
-    @field_validator("mutation_strategy", "source_prompt", "mutation_reason_summary", "response")
+    @field_validator("attempt_id", "mutation_strategy", "source_prompt", "mutation_reason_summary", "response")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class SecurityFinding(StrictBaseModel):
+    finding_id: str
+    attack_id: str
+    attack_name: str
+    category: str
+    severity: str
+    target_name: str | None = None
+    target_type: str | None = None
+    evidence_summary: str
+    successful_attempt_ids: list[str] = Field(default_factory=list)
+    mutation_strategies: list[str] = Field(default_factory=list)
+    source_prompts: list[str] = Field(default_factory=list)
+    recommendation: str
+    response_excerpt: str = ""
+
+    @field_validator(
+        "finding_id",
+        "attack_id",
+        "attack_name",
+        "category",
+        "severity",
+        "evidence_summary",
+        "recommendation",
+    )
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("target_name", "target_type")
     @classmethod
     def validate_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -104,8 +145,9 @@ class PromptMutation(StrictBaseModel):
 class SecurityAgentResult(StrictBaseModel):
     target_profile: TargetProfile
     objective: SecurityTestObjective
+    attack_plan: AttackPlan | None = None
     attempts: list[AttackAttempt] = Field(default_factory=list)
-    findings: list[dict[str, Any]] = Field(default_factory=list)
+    findings: list[SecurityFinding] = Field(default_factory=list)
     prompt_mutations: list[PromptMutation] = Field(default_factory=list)
     summary: str
     risk_summary: dict[str, Any] = Field(default_factory=dict)
