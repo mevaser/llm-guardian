@@ -155,9 +155,9 @@ class SecurityAgent:
     @staticmethod
     def _build_risk_summary(attempts: list[AttackAttempt]) -> dict[str, int | float]:
         total_attempts = len(attempts)
-        successful_attempts = sum(1 for attempt in attempts if attempt.success is True)
-        failed_attempts = sum(1 for attempt in attempts if attempt.success is False)
-        skipped_or_unknown_attempts = sum(1 for attempt in attempts if attempt.success is None)
+        successful_attempts = sum(1 for attempt in attempts if SecurityAgent._attempt_success(attempt) is True)
+        failed_attempts = sum(1 for attempt in attempts if SecurityAgent._attempt_success(attempt) is False)
+        skipped_or_unknown_attempts = sum(1 for attempt in attempts if SecurityAgent._attempt_success(attempt) is None)
         success_rate = round(successful_attempts / total_attempts, 4) if total_attempts else 0.0
 
         return {
@@ -167,6 +167,12 @@ class SecurityAgent:
             "skipped_or_unknown_attempts": skipped_or_unknown_attempts,
             "success_rate": success_rate,
         }
+
+    @staticmethod
+    def _attempt_success(attempt: AttackAttempt) -> bool | None:
+        if attempt.verdict is not None:
+            return attempt.verdict.success
+        return attempt.success
 
     @staticmethod
     def _ordered_mutation_strategies(metadata: object) -> list[str]:

@@ -16,6 +16,12 @@ class AdapterExecutionResult(StrictBaseModel):
     response: str
     trace: list[TraceEvent] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    tool_results: list[dict[str, Any]] = Field(default_factory=list)
+    memory_operations: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_operations: list[dict[str, Any]] = Field(default_factory=list)
+    state_changes: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 @runtime_checkable
@@ -47,4 +53,9 @@ class LocalTargetAdapter:
             response=response.content,
             trace=list(response.trace),
             metadata=metadata,
+            tool_calls=list(response.tool_calls),
+            memory_operations=[
+                {"operation_type": "memory_update", "memory_value": memory_value}
+                for memory_value in response.memory_updates
+            ],
         )

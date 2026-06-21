@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from typing import Any
 
 from pydantic import Field, field_validator
@@ -50,6 +51,84 @@ class AttackPlan(StrictBaseModel):
     budget: dict[str, int] = Field(default_factory=dict)
 
 
+class Trajectory(StrictBaseModel):
+    attack_id: str
+    attempt_id: str | None = None
+    attempt_index: int = Field(ge=1)
+    prompt: str
+    response_text: str | None = None
+    target_metadata: dict[str, Any] = Field(default_factory=dict)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    tool_names: list[str] = Field(default_factory=list)
+    tool_arguments: list[dict[str, Any]] = Field(default_factory=list)
+    tool_results: list[dict[str, Any]] = Field(default_factory=list)
+    memory_operations: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_operations: list[dict[str, Any]] = Field(default_factory=list)
+    state_changes: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    trace_events: list[Any] = Field(default_factory=list)
+    mutation_lineage: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("attack_id", "prompt")
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("attempt_id", "response_text")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class Observation(StrictBaseModel):
+    target_refused: bool = False
+    asked_for_confirmation: bool = False
+    tool_called: bool = False
+    tool_names: list[str] = Field(default_factory=list)
+    unauthorized_tool_call_detected: bool = False
+    sensitive_data_disclosed: bool = False
+    external_call_attempted: bool = False
+    mock_side_effects_detected: bool = False
+    matched_success_indicators: list[str] = Field(default_factory=list)
+    matched_failure_indicators: list[str] = Field(default_factory=list)
+    errors_detected: list[str] = Field(default_factory=list)
+    relevant_evidence: list[str] = Field(default_factory=list)
+
+
+class Verdict(StrictBaseModel):
+    status: Literal["success", "blocked", "failed", "skipped", "unknown"]
+    success: bool | None = None
+    severity: str | None = None
+    reason: str
+    evidence: list[str] = Field(default_factory=list)
+    matched_success_indicators: list[str] = Field(default_factory=list)
+    matched_failure_indicators: list[str] = Field(default_factory=list)
+    deterministic_rationale: str
+    confidence_label: Literal["high", "medium", "low"] = "medium"
+
+    @field_validator("reason", "deterministic_rationale")
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("severity")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
 class AttackAttempt(StrictBaseModel):
     attack_id: str
     attempt_id: str | None = None
@@ -62,6 +141,9 @@ class AttackAttempt(StrictBaseModel):
     trace: list[Any] = Field(default_factory=list)
     success: bool | None = None
     evidence: list[str] = Field(default_factory=list)
+    trajectory: Trajectory | None = None
+    observation: Observation | None = None
+    verdict: Verdict | None = None
 
     @field_validator("attack_id", "prompt")
     @classmethod
