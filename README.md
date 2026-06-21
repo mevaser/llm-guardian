@@ -48,6 +48,8 @@ python -m llm_guardian.cli agent-scan --target tool_agent --category tool_abuse 
 python -m llm_guardian.cli agent-scan --target rag_agent --category rag_injection --output-format markdown --output-file tmp/agent-report.md
 ```
 
+`agent-scan` resolves target execution contracts from `data/target_profiles.yaml` by target name. Use `--target-profile path/to/target_profiles.yaml` to run the same local flow with another validated profile file.
+
 `scan` remains the baseline `ScanRunner` command. `agent-scan` is additive and uses `SecurityAgent` against approved local demo targets only.
 
 Run the Streamlit dashboard locally:

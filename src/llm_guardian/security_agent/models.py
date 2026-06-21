@@ -11,17 +11,36 @@ from llm_guardian.models import StrictBaseModel
 
 
 class TargetProfile(StrictBaseModel):
+    target_name: str | None = None
     target_type: str
     capabilities: list[str] = Field(default_factory=list)
+    available_tools: list[str] = Field(default_factory=list)
     risk_surfaces: list[str] = Field(default_factory=list)
     allowed_categories: list[str] = Field(default_factory=list)
+    forbidden_actions: list[str] = Field(default_factory=list)
+    assets_at_risk: list[str] = Field(default_factory=list)
+    trust_boundaries: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    safety_constraints: list[str] = Field(default_factory=list)
     authorization_scope: str
+    safety_mode: str = "strict"
+    retry_policy: dict[str, Any] = Field(default_factory=dict)
+    mutation_policy: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("target_type", "authorization_scope")
+    @field_validator("target_type", "authorization_scope", "safety_mode")
     @classmethod
     def validate_required_text(cls, value: str) -> str:
         if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("target_name")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
             raise ValueError("must be a non-empty string")
         return value
 

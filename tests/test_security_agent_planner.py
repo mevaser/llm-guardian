@@ -226,6 +226,11 @@ def test_attack_planner_builds_threat_model_from_target_profile_and_objective() 
     )
     target_profile.metadata["target_name"] = "demo-tool-agent"
     target_profile.metadata["available_tools"] = ["simulated_email_tool"]
+    target_profile.forbidden_actions = ["send_external_email"]
+    target_profile.assets_at_risk = ["customer records"]
+    target_profile.trust_boundaries = ["model decision to simulated tool execution"]
+    target_profile.assumptions = ["Only local simulated tools are available."]
+    target_profile.safety_constraints = ["No real emails may be sent."]
 
     threat_model = planner.build_threat_model(
         target_profile=target_profile,
@@ -236,7 +241,11 @@ def test_attack_planner_builds_threat_model_from_target_profile_and_objective() 
     assert threat_model.target_type == "tool_using_agent"
     assert threat_model.available_tools == ["simulated_email_tool"]
     assert threat_model.threat_categories_in_scope == ["tool_abuse"]
-    assert "external_system_access" in threat_model.forbidden_actions
+    assert threat_model.forbidden_actions == ["send_external_email"]
+    assert threat_model.assets_at_risk == ["customer records"]
+    assert threat_model.trust_boundaries == ["model decision to simulated tool execution"]
+    assert threat_model.assumptions == ["Only local simulated tools are available."]
+    assert threat_model.safety_constraints == ["No real emails may be sent."]
     assert any("tool" in item.lower() for item in threat_model.rationale)
 
 
