@@ -1,6 +1,7 @@
 from llm_guardian.attacks.loader import load_attack_library
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH
 from llm_guardian.models import AttackCase, AttackCategory, Severity, TargetResponse
+from llm_guardian.reports.generator import MarkdownReportGenerator
 from llm_guardian.runner.scan_runner import ScanRunner
 from llm_guardian.targets.customer_support import CustomerSupportAgent
 from llm_guardian.targets.memory_agent import MemoryAgent
@@ -130,7 +131,31 @@ def test_scan_runner_tool_agent_succeeds_for_tool_abuse_attacks() -> None:
         assert result.success is True
         assert indicator in result.response.lower()
         assert result.evidence
-        assert any(event.event_type == "simulated_tool_decision" for event in result.trace)
+        for event_type in (
+            "planner_decision",
+            "policy_decision",
+            "action_selected",
+            "tool_called",
+            "observation_received",
+            "final_response",
+        ):
+            assert any(event.event_type == event_type for event in result.trace)
+
+
+def test_scan_runner_tool_agent_markdown_report_includes_runtime_trajectory_events() -> None:
+    library = load_attack_library(DEFAULT_ATTACK_LIBRARY_PATH)
+    runner = ScanRunner(target=ToolAgent())
+    attack = next(item for item in library.attacks if item.id == "TA-001")
+
+    report = runner.run([attack])
+    rendered = MarkdownReportGenerator().render(report)
+
+    assert report.findings[0].success is True
+    assert "`planner_decision`" in rendered
+    assert "`policy_decision`" in rendered
+    assert "`tool_called`" in rendered
+    assert "`observation_received`" in rendered
+    assert "`final_response`" in rendered
 
 
 def test_scan_runner_rag_agent_succeeds_for_rag_injection_attacks() -> None:
