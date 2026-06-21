@@ -35,6 +35,21 @@ Run the verification gate:
 ./verify.sh
 ```
 
+Run the deterministic baseline scan flow:
+
+```bash
+python -m llm_guardian.cli scan --target customer_support --offline --output tmp/baseline-report.json
+```
+
+Run the separate local-demo-only security-agent orchestration flow:
+
+```bash
+python -m llm_guardian.cli agent-scan --target tool_agent --category tool_abuse --output-format json
+python -m llm_guardian.cli agent-scan --target rag_agent --category rag_injection --output-format markdown --output-file tmp/agent-report.md
+```
+
+`scan` remains the baseline `ScanRunner` command. `agent-scan` is additive and uses `SecurityAgent` against approved local demo targets only.
+
 Run the Streamlit dashboard locally:
 
 ```bash
