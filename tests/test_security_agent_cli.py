@@ -95,6 +95,26 @@ def test_agent_scan_writes_json_output_file_without_stdout_noise(tmp_path: Path)
     assert payload["target_profile"]["metadata"]["target_name"] == "rag_agent"
 
 
+def test_agent_scan_creates_missing_output_directory(tmp_path: Path) -> None:
+    output_path = tmp_path / "nested" / "reports" / "agent-report.md"
+
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "tool_agent",
+        "--category",
+        "tool_abuse",
+        "--output-format",
+        "markdown",
+        "--output-file",
+        str(output_path),
+    )
+
+    assert result.returncode == 0
+    assert output_path.exists()
+    assert "# LLM Guardian Security Agent Report" in output_path.read_text(encoding="utf-8")
+
+
 def test_agent_scan_rejects_invalid_target_name() -> None:
     result = run_cli("agent-scan", "--target", "unknown-target", "--output-format", "json")
 

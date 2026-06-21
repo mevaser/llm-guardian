@@ -176,6 +176,7 @@ def agent_scan(
         )
 
     if output_file is not None:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(rendered_output + "\n", encoding="utf-8")
         return 0
 

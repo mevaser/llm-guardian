@@ -165,3 +165,14 @@ def test_markdown_report_is_deterministic_and_includes_required_sections() -> No
     assert "Mutation strategies: `role_framing`" in first
     assert "## Attempt History" in first
     assert "JB-001-attempt-2" in first
+
+
+def test_markdown_report_uses_unrestricted_wording_for_empty_allowed_categories() -> None:
+    result = build_result()
+    result.objective = build_objective(allowed_categories=[])
+    builder = SecurityAgentMarkdownReportBuilder()
+
+    rendered = builder.build(result=result, attack_library=build_attack_library())
+
+    assert "Allowed categories: not restricted" in rendered
+    assert "Allowed categories: none" not in rendered
