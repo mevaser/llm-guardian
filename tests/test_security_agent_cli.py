@@ -326,7 +326,43 @@ def test_agent_scan_deterministic_mode_ignores_unimplemented_provider_selection(
     assert payload["summary"]["mutation_strategies_used"] == []
 
 
-def test_agent_scan_llm_assisted_ollama_provider_fails_clearly() -> None:
+def test_agent_scan_llm_assisted_ollama_provider_runs_with_local_fallback() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "mutation_challenge_tool_agent",
+        "--category",
+        "tool_abuse",
+        "--max-total-attempts",
+        "10",
+        "--max-attempts-per-attack",
+        "2",
+        "--max-mutations-per-attack",
+        "1",
+        "--mutation-strategy-mode",
+        "llm-assisted",
+        "--llm-provider",
+        "ollama",
+        "--llm-model",
+        "qwen2.5:7b-instruct",
+        "--llm-timeout-seconds",
+        "1",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["total_attempts"] == 10
+    assert payload["summary"]["successful_attempts"] == 5
+    assert payload["summary"]["failed_attempts"] == 5
+    assert payload["attack_campaign"]["retry_policy"]["mutation_strategy_mode"] == "llm-assisted"
+    assert payload["prompt_mutations"]
+    assert payload["prompt_mutations"][0]["llm_validation_status"] is not None
+    assert payload["prompt_mutations"][0]["fallback_used"] in {True, False}
+
+
+def test_agent_scan_llm_assisted_ollama_provider_requires_model() -> None:
     result = run_cli(
         "agent-scan",
         "--target",
@@ -337,14 +373,12 @@ def test_agent_scan_llm_assisted_ollama_provider_fails_clearly() -> None:
         "llm-assisted",
         "--llm-provider",
         "ollama",
-        "--llm-model",
-        "qwen2.5:7b-instruct",
         "--output-format",
         "json",
     )
 
     assert result.returncode == 1
-    assert "Ollama LLM-assisted mutation is not implemented" in result.stderr
+    assert "Ollama LLM provider requires --llm-model." in result.stderr
 
 
 def test_agent_scan_repeated_json_runs_remain_deterministic() -> None:

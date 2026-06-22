@@ -21,6 +21,7 @@ from llm_guardian.security_agent.models import (
 from llm_guardian.security_agent.mutator import (
     LLMAssistedPromptMutator,
     LLMClient,
+    OllamaLLMClient,
     PromptMutator,
     StaticFakeLLMClient,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "LocalTargetAdapter",
     "LLMAssistedPromptMutator",
     "LLMClient",
+    "OllamaLLMClient",
     "Observation",
     "PromptMutation",
     "PromptMutator",

@@ -133,6 +133,20 @@ def test_security_agent_demo_scan_supports_llm_assisted_fake_mode() -> None:
     assert payload["attempt_history"][1]["llm_recommended_strategy"] == "indirect_framing"
 
 
+def test_security_agent_demo_scan_supports_llm_assisted_ollama_mode() -> None:
+    payload = run_security_agent_demo_scan(
+        mutation_strategy_mode="llm-assisted",
+        llm_provider="ollama",
+        llm_model="qwen2.5:7b-instruct",
+        llm_timeout_seconds=1,
+    ).payload
+
+    assert payload["attack_campaign"]["retry_policy"]["mutation_strategy_mode"] == "llm-assisted"
+    assert payload["prompt_mutations"]
+    assert payload["prompt_mutations"][0]["llm_validation_status"] is not None
+    assert payload["prompt_mutations"][0]["fallback_used"] in {True, False}
+
+
 def test_security_agent_demo_scan_deterministic_mutation_payload_omits_null_llm_metadata() -> None:
     payload = run_security_agent_demo_scan(
         target_name="mutation_challenge_tool_agent",
