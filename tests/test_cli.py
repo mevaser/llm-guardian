@@ -79,6 +79,7 @@ def test_cli_list_targets_includes_tool_and_rag_agents() -> None:
     assert result.stdout.splitlines() == [
         "customer_support",
         "memory_agent",
+        "mutation_challenge_tool_agent",
         "rag_agent",
         "tool_agent",
     ]

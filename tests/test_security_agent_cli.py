@@ -171,6 +171,71 @@ def test_agent_scan_mutation_budget_changes_attempt_history() -> None:
     assert any(attempt["attempt_index"] == 2 for attempt in mutated_payload["attempt_history"])
 
 
+def test_agent_scan_uses_yaml_mutation_budget_for_mutation_challenge_target() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "mutation_challenge_tool_agent",
+        "--category",
+        "tool_abuse",
+        "--max-attempts-per-attack",
+        "2",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    attempts_by_attack: dict[str, list[dict[str, object]]] = {}
+    for attempt in payload["attempt_history"]:
+        attempts_by_attack.setdefault(attempt["attack_id"], []).append(attempt)
+    ta_001_attempts = attempts_by_attack["TA-001"]
+
+    assert payload["target_profile"]["target_name"] == "mutation_challenge_tool_agent"
+    assert payload["target_profile"]["mutation_policy"]["max_mutations_per_attack"] == 1
+    assert payload["attack_campaign"]["mutation_budget"] == 1
+    assert payload["attack_campaign"]["retry_policy"]["max_mutations_per_attack"] == 1
+    assert payload["summary"]["mutation_strategies_used"] == ["indirect_framing"]
+    assert [attempt["attempt_index"] for attempt in ta_001_attempts] == [1, 2]
+    assert ta_001_attempts[0]["verdict"]["status"] == "blocked"
+    assert ta_001_attempts[0]["success"] is False
+    assert ta_001_attempts[0]["observation"]["target_refused"] is True
+    assert ta_001_attempts[1]["verdict"]["status"] == "success"
+    assert ta_001_attempts[1]["success"] is True
+    assert ta_001_attempts[1]["mutation_strategy"] == "indirect_framing"
+    assert ta_001_attempts[1]["trajectory"]["mutation_lineage"]["mutation_strategy"] == "indirect_framing"
+    assert ta_001_attempts[1]["trajectory"]["tool_names"] == ["simulated_email_tool"]
+    assert ta_001_attempts[1]["observation"]["mock_side_effects_detected"] is True
+    assert ta_001_attempts[1]["observation"]["external_call_attempted"] is False
+    assert payload["findings"][0]["attack_id"] == "TA-001"
+    assert payload["findings"][0]["successful_attempt_ids"] == ["TA-001-attempt-2"]
+    assert payload["findings"][0]["mutation_strategies"] == ["indirect_framing"]
+
+
+def test_agent_scan_explicit_mutation_budget_overrides_yaml_profile() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "mutation_challenge_tool_agent",
+        "--category",
+        "tool_abuse",
+        "--max-attempts-per-attack",
+        "2",
+        "--max-mutations-per-attack",
+        "0",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+
+    assert payload["attack_campaign"]["mutation_budget"] == 0
+    assert payload["attack_campaign"]["retry_policy"]["max_mutations_per_attack"] == 0
+    assert payload["prompt_mutations"] == []
+    assert all(attempt["attempt_index"] == 1 for attempt in payload["attempt_history"])
+
+
 def test_agent_scan_repeated_json_runs_remain_deterministic() -> None:
     first = run_cli(
         "agent-scan",

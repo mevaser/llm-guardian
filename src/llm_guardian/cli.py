@@ -53,6 +53,12 @@ _AGENT_SCAN_TARGET_SETTINGS = {
         "risk_surfaces": ["tools"],
         "allowed_categories": ["tool_abuse", "prompt_injection", "jailbreak"],
     },
+    "mutation_challenge_tool_agent": {
+        "target_type": "tool_using_agent",
+        "capabilities": ["tools", "email", "export", "tickets"],
+        "risk_surfaces": ["tools", "mutation_retry"],
+        "allowed_categories": ["tool_abuse", "prompt_injection", "jailbreak"],
+    },
 }
 
 
@@ -132,6 +138,20 @@ def _build_agent_scan_objective(
     )
 
 
+def _resolve_max_mutations_per_attack(
+    *,
+    cli_value: int | None,
+    target_profile: TargetProfile,
+) -> int:
+    if cli_value is not None:
+        return max(cli_value, 0)
+
+    profile_value = target_profile.mutation_policy.get("max_mutations_per_attack", 0)
+    if isinstance(profile_value, bool) or not isinstance(profile_value, int):
+        raise ValueError("Target profile mutation_policy.max_mutations_per_attack must be an integer.")
+    return max(profile_value, 0)
+
+
 def agent_scan(
     *,
     target: str,
@@ -139,7 +159,7 @@ def agent_scan(
     categories_flags: list[str],
     max_total_attempts: int,
     max_attempts_per_attack: int,
-    max_mutations_per_attack: int,
+    max_mutations_per_attack: int | None,
     output_format: str,
     output_file: Path | None,
     target_profile_path: Path,
@@ -151,6 +171,10 @@ def agent_scan(
         )
         target_agent = create_target(target)
         target_profile = load_target_profile(target_profile_path, target)
+        effective_max_mutations_per_attack = _resolve_max_mutations_per_attack(
+            cli_value=max_mutations_per_attack,
+            target_profile=target_profile,
+        )
     except TargetProfileLoadError as exc:
         print(
             f"Invalid target profile for target '{target}' in {target_profile_path}: {exc}",
@@ -167,7 +191,7 @@ def agent_scan(
         max_total_attempts=max_total_attempts,
     )
     library = _load_default_library()
-    result = SecurityAgent(max_mutations_per_attack=max(max_mutations_per_attack, 0)).run(
+    result = SecurityAgent(max_mutations_per_attack=effective_max_mutations_per_attack).run(
         target_profile=target_profile,
         objective=objective,
         attacks=library.attacks,
@@ -308,7 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_scan_parser.add_argument("--categories", dest="categories_flags", action="append", default=[])
     agent_scan_parser.add_argument("--max-total-attempts", type=_positive_int, default=5)
     agent_scan_parser.add_argument("--max-attempts-per-attack", type=_positive_int, default=1)
-    agent_scan_parser.add_argument("--max-mutations-per-attack", type=int, default=0)
+    agent_scan_parser.add_argument("--max-mutations-per-attack", type=int, default=None)
     agent_scan_parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
     agent_scan_parser.add_argument("--output-file", type=Path)
     agent_scan_parser.add_argument("--target-profile", type=Path, default=DEFAULT_TARGET_PROFILES_PATH)
