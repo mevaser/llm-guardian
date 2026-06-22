@@ -7,6 +7,7 @@ import pytest
 
 from llm_guardian.targets.customer_support import CustomerSupportAgent
 from llm_guardian.targets.memory_agent import MemoryAgent
+from llm_guardian.targets.mutation_challenge_tool_agent import MutationChallengeToolAgent
 from llm_guardian.targets.rag_agent import RagAgent
 from llm_guardian.targets.registry import create_target, list_targets
 from llm_guardian.targets.tool_agent import ToolAgent
@@ -29,12 +30,19 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_list_targets_returns_supported_target_names() -> None:
-    assert list_targets() == ["customer_support", "memory_agent", "rag_agent", "tool_agent"]
+    assert list_targets() == [
+        "customer_support",
+        "memory_agent",
+        "mutation_challenge_tool_agent",
+        "rag_agent",
+        "tool_agent",
+    ]
 
 
 def test_create_target_returns_supported_target_instances() -> None:
     assert isinstance(create_target("customer_support"), CustomerSupportAgent)
     assert isinstance(create_target("memory_agent"), MemoryAgent)
+    assert isinstance(create_target("mutation_challenge_tool_agent"), MutationChallengeToolAgent)
     assert isinstance(create_target("tool_agent"), ToolAgent)
     assert isinstance(create_target("rag_agent"), RagAgent)
 
@@ -51,6 +59,7 @@ def test_cli_list_targets_works() -> None:
     assert result.stdout.splitlines() == [
         "customer_support",
         "memory_agent",
+        "mutation_challenge_tool_agent",
         "rag_agent",
         "tool_agent",
     ]
