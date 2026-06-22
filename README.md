@@ -1,92 +1,87 @@
-# LLM Guardian
+# LLM Guardian - AI Agent Security Evaluator
 
-LLM Guardian is a controlled AI Red Team evaluation harness for testing local, intentionally vulnerable LLM target agents. The project is designed for spec-first, TDD-style development with deterministic offline tests.
+## Summary
+LLM Guardian is a deterministic MVP for evaluating LLM and agent security behavior against prompt injection, indirect prompt injection, unsafe tool use, and secret-exfiltration scenarios.
 
-## Current Status
-The repository contains a deterministic offline scan engine, local vulnerable demo targets, CLI workflows, and a local Streamlit dashboard for exploring scan results.
+The project is intentionally scoped as an offline-first course submission. It focuses on stable, reproducible evaluation behavior rather than production deployment.
 
-## MVP Goal
-- Load predefined attack cases from YAML.
-- Execute attacks against local demo target agents.
-- Evaluate responses with deterministic rules.
-- Produce JSON and Markdown security reports.
-- Display results in a local Streamlit dashboard.
+## What the agent does
+- Loads attack scenarios from YAML.
+- Runs scenarios against a demo vulnerable RAG agent.
+- Captures response, retrieved context, and tool trace.
+- Grades behavior using deterministic rules.
+- Writes trajectory JSON.
+- Writes a Markdown report.
 
-## Boundaries
-- Only local demo targets are in scope.
-- Unit tests must not call real LLM APIs.
-- External tools and side effects must be simulated.
-- Do not scan real third-party systems.
-- Do not commit secrets.
+## Quick demo
+Run the MVP demo scan:
 
-## Planned Verification
-Use the repository verification gate before completing future implementation tasks:
-
-```bash
-./verify.sh
+```powershell
+python -m llm_guardian.cli agent-scan --target demo-vulnerable-rag --output-dir reports/demo_scan
 ```
 
-The verification gate compiles the codebase, runs tests, and validates the attack library.
+Expected stable console summary:
 
-## Local Usage
-Run the verification gate:
-
-```bash
-./verify.sh
+```text
+LLM Guardian Scan Complete
+Target: demo-vulnerable-rag
+Scenarios tested: 8
+Passed: 6
+Failed: 2
+Critical: 2
+Overall Risk: CRITICAL
 ```
 
-Run the deterministic baseline scan flow:
+## Output files
+The demo command writes:
 
-```bash
-python -m llm_guardian.cli scan --target customer_support --offline --output tmp/baseline-report.json
+- `reports/demo_scan/scan_report.md`
+- `reports/demo_scan/trajectory.json`
+
+## Sample outputs
+Reference artifacts are included in:
+
+- `examples/demo_scan/scan_report.md`
+- `examples/demo_scan/trajectory.json`
+
+## Main project components
+- `data/attack_scenarios.yaml`
+- `demo_targets/vulnerable_rag_agent/`
+- `src/llm_guardian/attacks/loader.py`
+- `src/llm_guardian/runner/scenario_runner.py`
+- `src/llm_guardian/evaluators/deterministic.py`
+- `src/llm_guardian/reports/trajectory.py`
+- `src/llm_guardian/reports/markdown.py`
+- `src/llm_guardian/cli.py`
+
+## Security note
+- `send_email` is mock-only.
+- `read_secret` returns a fixed fake demo secret.
+- No real emails are sent.
+- No real secrets are read.
+- No LLM or external API call is required for the demo scan.
+
+## Limitations
+- This is a deterministic MVP, not a full commercial red-team platform.
+- No real MCP or tool integration yet.
+- No LLM-as-judge yet.
+- No cloud deployment yet.
+- No benchmark adapters yet.
+- The vulnerable target is intentionally simplified for demonstration.
+
+## Tests
+Run the test suite:
+
+```powershell
+$runTemp = Join-Path $PWD ".tmp\pytest-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Force $runTemp | Out-Null
+python -m pytest --basetemp="$runTemp" -p no:cacheprovider
+python scripts/verify.py
 ```
 
-Run the separate local-demo-only security-agent orchestration flow:
-
-```bash
-python -m llm_guardian.cli agent-scan --target tool_agent --category tool_abuse --output-format json
-python -m llm_guardian.cli agent-scan --target rag_agent --category rag_injection --output-format markdown --output-file tmp/agent-report.md
-```
-
-`agent-scan` resolves target execution contracts from `data/target_profiles.yaml` by target name. Use `--target-profile path/to/target_profiles.yaml` to run the same local flow with another validated profile file.
-
-Prompt mutation defaults to deterministic mode. To exercise the optional offline LLM-assisted mutator with the fake client:
-
-```bash
-python -m llm_guardian.cli agent-scan --target mutation_challenge_tool_agent --category tool_abuse --max-total-attempts 10 --max-attempts-per-attack 2 --max-mutations-per-attack 1 --mutation-strategy-mode llm-assisted --llm-provider fake --output-format markdown
-```
-
-The LLM-assisted path validates structured JSON mutation proposals and falls back to deterministic mutation if validation fails. Verdicts remain deterministic.
-
-To use the local Ollama-backed client, start a local Ollama server and make sure the target model is available before running the scan. The CLI uses `http://localhost:11434` and requires `--llm-model`:
-
-```bash
-ollama serve
-ollama pull qwen2.5:7b-instruct
-python -m llm_guardian.cli agent-scan --target mutation_challenge_tool_agent --category tool_abuse --max-total-attempts 10 --max-attempts-per-attack 2 --max-mutations-per-attack 1 --mutation-strategy-mode llm-assisted --llm-provider ollama --llm-model qwen2.5:7b-instruct --output-format markdown
-```
-
-If the local Ollama response is unavailable or invalid, the mutator falls back to the deterministic mutation path and records the fallback metadata in the report.
-
-`scan` remains the baseline `ScanRunner` command. `agent-scan` is additive and uses `SecurityAgent` against approved local demo targets only.
-
-Run the Streamlit dashboard locally:
-
-```bash
-python -m streamlit run src/llm_guardian/app/streamlit_app.py
-```
-
-## Development Workflow
-Development work should happen on focused `feature/*` branches, with `main` kept stable. See `docs/GIT_WORKFLOW.md` for branch, commit, push, and merge rules.
-
-Run the verification gate through `scripts/verify.py` before completing work or creating local commits.
-
-## Key Docs
-- `docs/PRD.md`
-- `docs/ARCHITECTURE.md`
-- `docs/IMPLEMENTATION_PLAN.md`
-- `docs/TEST_STRATEGY.md`
-- `docs/GIT_WORKFLOW.md`
-- `docs/SECURITY_SCOPE.md`
-- `docs/DEMO_SCRIPT.md`
-- `docs/DEPLOYMENT.md`
+## Submission checklist
+- Demo command works.
+- Report generated.
+- Trajectory generated.
+- Sample artifacts included.
+- Tests passing.
