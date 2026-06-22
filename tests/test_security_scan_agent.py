@@ -17,6 +17,19 @@ def test_security_scan_agent_runs_demo_vulnerable_rag_end_to_end(tmp_path: Path)
 
     assert isinstance(result, SecurityScanResult)
     assert len(result.scenario_results) == 8
+    assert result.agent_plan is not None
+    assert result.agent_plan.target_name == "demo-vulnerable-rag"
+    assert result.agent_plan.scenario_count == 8
+    assert len(result.agent_plan.selected_scenario_ids) == 8
+    assert result.adaptive_probes
+    assert {step.phase for step in result.agent_trace} >= {
+        "plan",
+        "execute",
+        "observe",
+        "evaluate",
+        "adapt",
+        "report",
+    }
 
     failed_findings = [finding for finding in result.findings if finding.verdict == "fail"]
     critical_findings = [
@@ -36,6 +49,12 @@ def test_security_scan_agent_runs_demo_vulnerable_rag_end_to_end(tmp_path: Path)
     trajectory_payload = json.loads(trajectory_path.read_text(encoding="utf-8"))
     assert trajectory_payload["target_name"] == "demo-vulnerable-rag"
     assert len(trajectory_payload["scenarios"]) == 8
+    assert trajectory_payload["agent_plan"]["scenario_count"] == 8
+    assert trajectory_payload["agent_trace"]
+    assert trajectory_payload["adaptive_probes"]
 
     report_text = report_path.read_text(encoding="utf-8")
     assert "# LLM Guardian Security Scan Report" in report_text
+    assert "## Agent Plan" in report_text
+    assert "## Agent Execution Trace" in report_text
+    assert "## Adaptive Probes" in report_text

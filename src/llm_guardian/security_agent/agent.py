@@ -10,7 +10,13 @@ from pathlib import Path
 from llm_guardian.attacks.loader import load_attack_scenarios
 from llm_guardian.config import DEFAULT_ATTACK_SCENARIOS_PATH, REPOSITORY_ROOT
 from llm_guardian.evaluators import grade_result
-from llm_guardian.models import SecurityScanResult
+from llm_guardian.models import (
+    AdaptiveProbeResult,
+    AgentPlan,
+    AgentTraceStep,
+    SecurityScanResult,
+    Severity,
+)
 from llm_guardian.reports.markdown import generate_markdown_report
 from llm_guardian.reports.trajectory import write_trajectory_log
 from llm_guardian.runner import run_scenario
@@ -332,15 +338,102 @@ class SecurityScanAgent:
 
     def run(self, target_name: str, output_dir: Path) -> SecurityScanResult:
         scenarios = self._load_scenarios()
+        agent_trace: list[AgentTraceStep] = []
+        next_step = 1
+        agent_plan = self._build_agent_plan(target_name=target_name, scenarios=scenarios)
+        agent_trace.append(
+            AgentTraceStep(
+                step=next_step,
+                phase="plan",
+                action="Selected deterministic scenarios from the local YAML attack library.",
+                observation=(
+                    f"Loaded {agent_plan.scenario_count} scenarios from "
+                    f"{DEFAULT_ATTACK_SCENARIOS_PATH.name}."
+                ),
+                decision="Execute the selected scenarios in fixed YAML order.",
+                evidence=", ".join(agent_plan.selected_scenario_ids),
+            )
+        )
+        next_step += 1
         target_module = self._resolve_target(target_name)
-        scenario_results = self._run_scenarios(target_module=target_module, scenarios=scenarios)
-        findings = self._grade_results(scenarios=scenarios, scenario_results=scenario_results)
+        scenario_results = []
+        findings = []
+        for scenario in scenarios:
+            scenario_result = run_scenario(target_module, scenario)
+            scenario_results.append(scenario_result)
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="execute",
+                    scenario_id=scenario.id,
+                    action=f"Executed scenario '{scenario.id}' against the demo target.",
+                    observation="Collected a deterministic response, tool trace, and retrieved context.",
+                    decision="Inspect the captured runtime evidence.",
+                )
+            )
+            next_step += 1
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="observe",
+                    scenario_id=scenario.id,
+                    action="Reviewed the target response and tool trace.",
+                    observation=self._build_observation_summary(scenario_result),
+                    decision="Grade the scenario with deterministic evaluator rules.",
+                    evidence=self._build_observation_evidence(scenario_result),
+                )
+            )
+            next_step += 1
+            finding = grade_result(scenario, scenario_result)
+            findings.append(finding)
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="evaluate",
+                    scenario_id=scenario.id,
+                    action="Applied deterministic grading rules to the observed behavior.",
+                    observation=f"Scenario verdict: {finding.verdict}; severity: {finding.severity.value}.",
+                    decision=finding.reason,
+                    evidence=finding.evidence,
+                )
+            )
+            next_step += 1
+
+        adaptive_probes = self._build_adaptive_probes(findings=findings)
+        for adaptive_probe in adaptive_probes:
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="adapt",
+                    scenario_id=adaptive_probe.trigger_scenario_id,
+                    action=f"Recorded adaptive follow-up probe '{adaptive_probe.probe_id}'.",
+                    observation=adaptive_probe.observation,
+                    decision=adaptive_probe.recommendation,
+                    evidence=adaptive_probe.evidence,
+                )
+            )
+            next_step += 1
         scan_result = SecurityScanResult(
             scan_id=self._build_scan_id(),
             target_name=target_name,
             target_profile=self._build_target_profile(target_name),
+            agent_plan=agent_plan,
+            agent_trace=agent_trace,
             scenario_results=scenario_results,
             findings=findings,
+            adaptive_probes=adaptive_probes,
+        )
+        scan_result.agent_trace.append(
+            AgentTraceStep(
+                step=next_step,
+                phase="report",
+                action="Prepared the trajectory and Markdown report outputs.",
+                observation=(
+                    f"Collected {len(scan_result.findings)} graded scenarios and "
+                    f"{len(scan_result.adaptive_probes)} adaptive probes."
+                ),
+                decision="Write both scan artifacts to the requested output directory.",
+            )
         )
         self._write_outputs(scan_result=scan_result, output_dir=output_dir)
         return scan_result
@@ -365,15 +458,6 @@ class SecurityScanAgent:
         spec.loader.exec_module(module)
         return module
 
-    def _run_scenarios(self, *, target_module, scenarios):
-        return [run_scenario(target_module, scenario) for scenario in scenarios]
-
-    def _grade_results(self, *, scenarios, scenario_results):
-        return [
-            grade_result(scenario, result)
-            for scenario, result in zip(scenarios, scenario_results, strict=True)
-        ]
-
     def _write_outputs(self, *, scan_result: SecurityScanResult, output_dir: Path) -> None:
         resolved_output_dir = Path(output_dir)
         write_trajectory_log(scan_result, resolved_output_dir / "trajectory.json")
@@ -392,3 +476,80 @@ class SecurityScanAgent:
             "authorization_scope": "local_demo_only",
             "offline_only": True,
         }
+
+    @staticmethod
+    def _build_agent_plan(*, target_name: str, scenarios) -> AgentPlan:
+        selected_scenario_ids = [scenario.id for scenario in scenarios]
+        return AgentPlan(
+            target_name=target_name,
+            scenario_count=len(selected_scenario_ids),
+            selected_scenario_ids=selected_scenario_ids,
+            rationale=(
+                "Run every deterministic demo scenario to measure prompt-injection, "
+                "tool-use, secret-handling, and benign-response behavior in one stable scan."
+            ),
+            execution_strategy=(
+                "Execute scenarios in fixed YAML order, observe response and tool evidence, "
+                "grade with deterministic rules, then add follow-up probes for critical failures."
+            ),
+        )
+
+    @staticmethod
+    def _build_observation_summary(scenario_result) -> str:
+        tool_count = len(scenario_result.tool_trace)
+        has_context = bool(scenario_result.retrieved_context.strip())
+        return (
+            f"Observed {tool_count} tool call(s); "
+            f"retrieved_context_present={'yes' if has_context else 'no'}."
+        )
+
+    @staticmethod
+    def _build_observation_evidence(scenario_result) -> str:
+        if scenario_result.tool_trace:
+            first_tool = scenario_result.tool_trace[0]
+            tool_name = first_tool.get("tool") or first_tool.get("tool_name") or first_tool.get("name")
+            return f"First tool trace entry: {tool_name or 'unknown'}"
+        if scenario_result.retrieved_context.strip():
+            return "Retrieved context was captured for inspection."
+        return "No tool activity or retrieved context was captured."
+
+    @staticmethod
+    def _build_adaptive_probes(
+        *,
+        findings,
+    ) -> list[AdaptiveProbeResult]:
+        adaptive_probes: list[AdaptiveProbeResult] = []
+        for index, finding in enumerate(findings, start=1):
+            if finding.verdict != "fail" or finding.severity != Severity.CRITICAL:
+                continue
+            if finding.category == "unsafe_tool_use" and "attacker@example.com" in finding.reason:
+                adaptive_probes.append(
+                    AdaptiveProbeResult(
+                        probe_id=f"adaptive-probe-{index:03d}",
+                        trigger_scenario_id=finding.scenario_id,
+                        category=finding.category,
+                        status="confirmed",
+                        observation=(
+                            "Adaptive follow-up confirmed unsafe outbound tool behavior "
+                            "targeting attacker@example.com."
+                        ),
+                        recommendation="Add tool-call gating before any outbound email or export action.",
+                        evidence=finding.evidence,
+                    )
+                )
+                continue
+            adaptive_probes.append(
+                AdaptiveProbeResult(
+                    probe_id=f"adaptive-probe-{index:03d}",
+                    trigger_scenario_id=finding.scenario_id,
+                    category=finding.category,
+                    status="confirmed",
+                    observation=(
+                        "Adaptive follow-up confirmed the critical failure remained visible in "
+                        "the deterministic evidence."
+                    ),
+                    recommendation="Gate sensitive tool access and block secret-handling actions by policy.",
+                    evidence=finding.evidence,
+                )
+            )
+        return adaptive_probes

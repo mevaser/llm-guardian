@@ -41,6 +41,7 @@ def generate_markdown_report(scan_result: SecurityScanResult, output_path: Path)
         f"- Target name: {scan_result.target_name}",
         f"- Overall Risk: {overall_risk}",
         f"- Scenarios tested: {metrics['scenarios_tested']}",
+        f"- Adaptive probes: {len(scan_result.adaptive_probes)}",
         f"- Passed: {metrics['passed']}",
         f"- Failed: {metrics['failed']}",
         f"- Critical findings: {metrics['critical_count']}",
@@ -48,6 +49,7 @@ def generate_markdown_report(scan_result: SecurityScanResult, output_path: Path)
         "## Metrics",
         "",
         f"- scenarios_tested: {metrics['scenarios_tested']}",
+        f"- adaptive_probes: {len(scan_result.adaptive_probes)}",
         f"- passed: {metrics['passed']}",
         f"- failed: {metrics['failed']}",
         f"- critical_count: {metrics['critical_count']}",
@@ -55,9 +57,42 @@ def generate_markdown_report(scan_result: SecurityScanResult, output_path: Path)
         f"- medium_count: {metrics['medium_count']}",
         f"- safety_violation_rate: {metrics['safety_violation_rate']:.2f}",
         "",
-        "## Findings",
+        "## Agent Plan",
         "",
     ]
+
+    if scan_result.agent_plan is None:
+        lines.append("No agent plan was recorded.")
+    else:
+        lines.extend(
+            [
+                f"- target_name: {scan_result.agent_plan.target_name}",
+                f"- scenario_count: {scan_result.agent_plan.scenario_count}",
+                f"- selected_scenario_ids: {', '.join(scan_result.agent_plan.selected_scenario_ids)}",
+                f"- rationale: {scan_result.agent_plan.rationale}",
+                f"- execution_strategy: {scan_result.agent_plan.execution_strategy}",
+            ]
+        )
+
+    lines.extend(["", "## Agent Execution Trace", ""])
+    if scan_result.agent_trace:
+        for trace_step in scan_result.agent_trace:
+            lines.extend(_render_agent_trace_step(trace_step))
+    else:
+        lines.append("No agent execution trace was recorded.")
+
+    lines.extend(["", "## Adaptive Probes", ""])
+    if scan_result.adaptive_probes:
+        for adaptive_probe in scan_result.adaptive_probes:
+            lines.extend(_render_adaptive_probe(adaptive_probe))
+    else:
+        lines.append("No adaptive probes were required.")
+
+    lines.extend([
+        "",
+        "## Findings",
+        "",
+    ])
 
     if failed_findings:
         for finding in failed_findings:
@@ -75,6 +110,9 @@ def generate_markdown_report(scan_result: SecurityScanResult, output_path: Path)
     lines.extend(["", "## Appendix", ""])
     for scenario_result in scan_result.scenario_results:
         lines.extend(_render_appendix_entry(scenario_result))
+
+    while lines and lines[-1] == "":
+        lines.pop()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -136,6 +174,39 @@ def _render_finding(finding: SecurityFinding) -> list[str]:
     ]
 
 
+def _render_agent_trace_step(trace_step) -> list[str]:
+    lines = [
+        f"### Step {trace_step.step}",
+        f"- phase: {trace_step.phase}",
+    ]
+    if trace_step.scenario_id is not None:
+        lines.append(f"- scenario_id: {trace_step.scenario_id}")
+    lines.extend(
+        [
+            f"- action: {trace_step.action}",
+            f"- observation: {trace_step.observation}",
+            f"- decision: {trace_step.decision}",
+        ]
+    )
+    if trace_step.evidence is not None:
+        lines.append(f"- evidence: {trace_step.evidence}")
+    lines.append("")
+    return lines
+
+
+def _render_adaptive_probe(adaptive_probe) -> list[str]:
+    return [
+        f"### {adaptive_probe.probe_id}",
+        f"- trigger_scenario_id: {adaptive_probe.trigger_scenario_id}",
+        f"- category: {adaptive_probe.category}",
+        f"- status: {adaptive_probe.status}",
+        f"- observation: {adaptive_probe.observation}",
+        f"- recommendation: {adaptive_probe.recommendation}",
+        f"- evidence: {adaptive_probe.evidence}",
+        "",
+    ]
+
+
 def _build_recommendations(failed_findings: list[SecurityFinding]) -> list[str]:
     recommendations: list[str] = []
     seen: set[str] = set()
@@ -148,6 +219,14 @@ def _build_recommendations(failed_findings: list[SecurityFinding]) -> list[str]:
         if recommendation not in seen:
             recommendations.append(recommendation)
             seen.add(recommendation)
+
+    for adaptive_probe in failed_findings:
+        if adaptive_probe.category != "unsafe_tool_use":
+            continue
+        probe_recommendation = "Add tool-call gating before any outbound email or export action."
+        if probe_recommendation not in seen:
+            recommendations.append(probe_recommendation)
+            seen.add(probe_recommendation)
 
     return recommendations
 

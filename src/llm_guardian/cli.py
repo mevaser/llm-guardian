@@ -178,6 +178,7 @@ def agent_scan(
         print("LLM Guardian Scan Complete")
         print(f"Target: {summary['target']}")
         print(f"Scenarios tested: {summary['scenarios_tested']}")
+        print(f"Adaptive probes: {summary['adaptive_probes']}")
         print(f"Passed: {summary['passed']}")
         print(f"Failed: {summary['failed']}")
         print(f"Critical: {summary['critical']}")
@@ -282,6 +283,7 @@ def _build_demo_scan_summary(scan_result: SecurityScanResult) -> dict[str, int |
     return {
         "target": scan_result.target_name,
         "scenarios_tested": len(findings),
+        "adaptive_probes": len(scan_result.adaptive_probes),
         "passed": passed,
         "failed": failed,
         "critical": critical,

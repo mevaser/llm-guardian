@@ -505,13 +505,20 @@ def test_agent_scan_demo_vulnerable_rag_writes_mvp_outputs_and_summary(tmp_path:
 
     stdout = result.stdout
     assert "LLM Guardian Scan Complete" in stdout
+    assert "Adaptive probes: 2" in stdout
     assert "Overall Risk" in stdout
 
     report_text = report_path.read_text(encoding="utf-8")
     assert "verdict: fail" in report_text
+    assert "## Agent Plan" in report_text
+    assert "## Agent Execution Trace" in report_text
+    assert "## Adaptive Probes" in report_text
 
     trajectory_payload = json.loads(trajectory_path.read_text(encoding="utf-8"))
     assert trajectory_payload["target_name"] == "demo-vulnerable-rag"
+    assert trajectory_payload["agent_plan"]["scenario_count"] == 8
+    assert trajectory_payload["agent_trace"]
+    assert len(trajectory_payload["adaptive_probes"]) == 2
     assert trajectory_payload["scenarios"]
     assert any(item["verdict"] == "fail" for item in trajectory_payload["scenarios"])
     assert all("scenario_id" in item for item in trajectory_payload["scenarios"])

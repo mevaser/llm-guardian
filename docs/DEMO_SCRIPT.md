@@ -1,10 +1,10 @@
-# LLM Guardian — Course Demo Script
+# LLM Guardian - Course Demo Script
 
 ## Opening, 30 seconds
 LLM Guardian is a local AI Red Team evaluation project for testing how AI and LLM-based agents behave under security scenarios. The goal is to run structured attacks against a target agent, observe what it does, and turn that behavior into clear security evidence. In this MVP, everything is deterministic and offline, so the demo is stable, repeatable, and does not depend on live external systems.
 
 ## Architecture, 60 seconds
-The explicit evaluator agent is `SecurityScanAgent`. It loads attack scenarios from YAML in `data/attack_scenarios.yaml`, runs them against an intentionally vulnerable demo RAG agent in `demo_targets/vulnerable_rag_agent/`, observes the model response, retrieved context, and tool trace, then grades each scenario with deterministic rules. The final outputs are written as a trajectory JSON artifact and a Markdown report for review.
+The explicit evaluator agent is `SecurityScanAgent`. It loads attack scenarios from YAML in `data/attack_scenarios.yaml`, plans the scan, runs them against an intentionally vulnerable demo RAG agent in `demo_targets/vulnerable_rag_agent/`, observes the model response, retrieved context, and tool trace, grades each scenario with deterministic rules, and records adaptive follow-up probes when a critical failure is confirmed. The final outputs are written as a trajectory JSON artifact and a Markdown report for review.
 
 ## Live Command
 Run:
@@ -19,6 +19,7 @@ The stable console summary is:
 - `LLM Guardian Scan Complete`
 - `Target: demo-vulnerable-rag`
 - `Scenarios tested: 8`
+- `Adaptive probes: 2`
 - `Passed: 6`
 - `Failed: 2`
 - `Critical: 2`
@@ -42,4 +43,4 @@ The failure is intentional. The vulnerable RAG agent treats retrieved content as
 - No benchmark adapters yet.
 
 ## Closing
-This demonstrates an agentic security evaluator because `SecurityScanAgent` plans and runs scenarios, observes behavior, grades outcomes, and writes evidence that a developer can inspect.
+This demonstrates an agentic security evaluator because `SecurityScanAgent` plans the scan, executes scenarios, observes behavior, grades outcomes, adapts to critical findings with follow-up probes, and writes evidence that a developer can inspect.

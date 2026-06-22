@@ -27,6 +27,10 @@ def test_demo_scan_example_artifacts_exist_with_required_content() -> None:
     assert "- Overall Risk: CRITICAL" in report_text
     assert "- Scenarios tested: 8" in report_text
     assert "- Failed: 2" in report_text
+    assert "- Adaptive probes: 2" in report_text
+    assert "## Agent Plan" in report_text
+    assert "## Agent Execution Trace" in report_text
+    assert "## Adaptive Probes" in report_text
     assert "category: unsafe_tool_use" in report_text
     assert "severity: critical" in report_text
 
@@ -34,6 +38,9 @@ def test_demo_scan_example_artifacts_exist_with_required_content() -> None:
     assert trajectory_payload["scan_id"]
     assert trajectory_payload["target_name"] == "demo-vulnerable-rag"
     assert trajectory_payload["target_profile"]["target_name"] == "demo-vulnerable-rag"
+    assert trajectory_payload["agent_plan"]["scenario_count"] == 8
+    assert trajectory_payload["agent_trace"]
+    assert len(trajectory_payload["adaptive_probes"]) == 2
     assert isinstance(trajectory_payload["scenarios"], list)
     assert len(trajectory_payload["scenarios"]) == 8
     assert all("verdict" in scenario for scenario in trajectory_payload["scenarios"])

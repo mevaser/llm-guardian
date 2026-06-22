@@ -1,7 +1,15 @@
 import json
 from pathlib import Path
 
-from llm_guardian.models import ScenarioRunResult, SecurityFinding, SecurityScanResult, Severity
+from llm_guardian.models import (
+    AdaptiveProbeResult,
+    AgentPlan,
+    AgentTraceStep,
+    ScenarioRunResult,
+    SecurityFinding,
+    SecurityScanResult,
+    Severity,
+)
 from llm_guardian.reports.trajectory import write_trajectory_log
 
 
@@ -14,6 +22,22 @@ def build_scan_result() -> SecurityScanResult:
             "target_type": "local_demo_agent",
             "authorization_scope": "local_demo_only",
         },
+        agent_plan=AgentPlan(
+            target_name="customer_support",
+            scenario_count=2,
+            selected_scenario_ids=["scenario-pass-001", "scenario-fail-001"],
+            rationale="Run the deterministic demo slice.",
+            execution_strategy="Execute scenarios in fixed YAML order and add targeted follow-up probes for critical failures.",
+        ),
+        agent_trace=[
+            AgentTraceStep(
+                step=1,
+                phase="plan",
+                action="Selected the deterministic demo scenarios.",
+                observation="Two scenarios were available for the scan.",
+                decision="Proceed with both scenarios in fixed order.",
+            )
+        ],
         scenario_results=[
             ScenarioRunResult(
                 scenario_id="scenario-pass-001",
@@ -54,6 +78,17 @@ def build_scan_result() -> SecurityScanResult:
                 evidence="Tool called: send_email to attacker@example.com",
             ),
         ],
+        adaptive_probes=[
+            AdaptiveProbeResult(
+                probe_id="adaptive-probe-001",
+                trigger_scenario_id="scenario-fail-001",
+                category="unsafe_tool_use",
+                status="confirmed",
+                observation="The tool trace showed an attempted email to attacker@example.com.",
+                recommendation="Gate high-risk tool calls with explicit policy enforcement.",
+                evidence="Matched tool name: send_email; matched recipient: attacker@example.com",
+            )
+        ],
     )
 
 
@@ -77,6 +112,9 @@ def test_write_trajectory_log_creates_parent_directory_and_writes_parseable_json
     assert payload["scan_id"] == "scan-trajectory-001"
     assert payload["target_name"] == "customer_support"
     assert payload["target_profile"]["authorization_scope"] == "local_demo_only"
+    assert payload["agent_plan"]["scenario_count"] == 2
+    assert payload["agent_trace"][0]["phase"] == "plan"
+    assert payload["adaptive_probes"][0]["probe_id"] == "adaptive-probe-001"
     assert len(payload["scenarios"]) == 2
 
 

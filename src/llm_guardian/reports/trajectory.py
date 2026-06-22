@@ -20,6 +20,15 @@ def write_trajectory_log(scan_result: SecurityScanResult, output_path: Path) -> 
         "scan_id": scan_result.scan_id,
         "target_name": scan_result.target_name,
         "target_profile": _json_compatible(scan_result.target_profile),
+        "agent_plan": _json_compatible(
+            scan_result.agent_plan.model_dump(mode="json") if scan_result.agent_plan is not None else None
+        ),
+        "agent_trace": _json_compatible(
+            [trace_step.model_dump(mode="json") for trace_step in scan_result.agent_trace]
+        ),
+        "adaptive_probes": _json_compatible(
+            [adaptive_probe.model_dump(mode="json") for adaptive_probe in scan_result.adaptive_probes]
+        ),
         "scenarios": [
             {
                 "scenario_id": scenario_result.scenario_id,

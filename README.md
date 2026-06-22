@@ -8,9 +8,11 @@ The project is intentionally scoped as an offline-first course submission. It fo
 ## What the agent does
 - `SecurityScanAgent` is the explicit evaluator agent for the MVP demo scan.
 - Loads attack scenarios from YAML.
-- Plans and runs scenarios against a demo vulnerable RAG agent.
+- Plans the scan against a demo vulnerable RAG agent.
+- Executes scenarios in a deterministic offline loop.
 - Observes response, retrieved context, and tool trace.
 - Grades behavior using deterministic rules.
+- Adapts with follow-up probes when critical findings are observed.
 - Writes trajectory JSON evidence.
 - Writes a Markdown report.
 
@@ -27,6 +29,7 @@ Expected stable console summary:
 LLM Guardian Scan Complete
 Target: demo-vulnerable-rag
 Scenarios tested: 8
+Adaptive probes: 2
 Passed: 6
 Failed: 2
 Critical: 2

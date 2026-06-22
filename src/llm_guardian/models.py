@@ -157,14 +157,89 @@ class SecurityFinding(StrictBaseModel):
         return value
 
 
+class AgentPlan(StrictBaseModel):
+    """Deterministic plan summary for one security scan run."""
+
+    target_name: str
+    scenario_count: int = Field(ge=0)
+    selected_scenario_ids: list[str] = Field(default_factory=list)
+    rationale: str
+    execution_strategy: str
+
+    @field_validator("target_name", "rationale", "execution_strategy")
+    @classmethod
+    def validate_non_empty_plan_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class AgentTraceStep(StrictBaseModel):
+    """Auditable agent loop step for demo scan execution."""
+
+    step: int = Field(ge=1)
+    phase: str
+    scenario_id: str | None = None
+    action: str
+    observation: str
+    decision: str
+    evidence: str | None = None
+
+    @field_validator("phase", "action", "observation", "decision")
+    @classmethod
+    def validate_non_empty_trace_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("scenario_id", "evidence")
+    @classmethod
+    def validate_optional_trace_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class AdaptiveProbeResult(StrictBaseModel):
+    """Deterministic follow-up probe recorded after a critical failure."""
+
+    probe_id: str
+    trigger_scenario_id: str
+    category: str
+    status: str
+    observation: str
+    recommendation: str
+    evidence: str
+
+    @field_validator(
+        "probe_id",
+        "trigger_scenario_id",
+        "category",
+        "status",
+        "observation",
+        "recommendation",
+        "evidence",
+    )
+    @classmethod
+    def validate_non_empty_probe_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
 class SecurityScanResult(StrictBaseModel):
     """Structured scenario-scan result for deterministic trajectory export."""
 
     scan_id: str
     target_name: str
     target_profile: dict[str, Any] = Field(default_factory=dict)
+    agent_plan: AgentPlan | None = None
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
     scenario_results: list[ScenarioRunResult] = Field(default_factory=list)
     findings: list[SecurityFinding] = Field(default_factory=list)
+    adaptive_probes: list[AdaptiveProbeResult] = Field(default_factory=list)
 
     @field_validator("scan_id", "target_name")
     @classmethod

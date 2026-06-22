@@ -12,6 +12,8 @@ scan_report.md is the human-readable report.
 
 trajectory.json is the machine-readable evidence log.
 
+The sample artifacts include the `SecurityScanAgent` plan, execution trace, and adaptive probes.
+
 No real emails are sent.
 
 No real secrets are read.
