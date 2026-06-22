@@ -6,6 +6,9 @@ from unittest.mock import patch
 import pytest
 
 from llm_guardian.security_agent.models import PromptMutation
+from llm_guardian.security_agent import LLMAssistedPromptMutator as RootLLMAssistedPromptMutator
+from llm_guardian.security_agent import LLMClient as RootLLMClient
+from llm_guardian.security_agent import StaticFakeLLMClient as RootStaticFakeLLMClient
 from llm_guardian.security_agent.mutator import (
     LLMAssistedPromptMutator,
     PromptMutator,
@@ -145,6 +148,12 @@ def test_prompt_mutator_does_not_require_network_or_external_calls() -> None:
         )
 
     assert mutation.mutation_type == "indirect_framing"
+
+
+def test_security_agent_package_exports_llm_assisted_symbols() -> None:
+    assert RootLLMAssistedPromptMutator is LLMAssistedPromptMutator
+    assert RootLLMClient is not None
+    assert RootStaticFakeLLMClient is StaticFakeLLMClient
 
 
 def test_llm_assisted_mutator_uses_valid_fake_json() -> None:
