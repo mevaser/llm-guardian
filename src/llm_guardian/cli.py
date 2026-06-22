@@ -3,14 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 
-from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
-from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH, DEFAULT_TARGET_PROFILES_PATH
-from llm_guardian.models import AttackCategory, ScanReport
+from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library, load_attack_scenarios
+from llm_guardian.config import (
+    DEFAULT_ATTACK_LIBRARY_PATH,
+    DEFAULT_ATTACK_SCENARIOS_PATH,
+    DEFAULT_TARGET_PROFILES_PATH,
+    REPOSITORY_ROOT,
+)
+from llm_guardian.evaluators import grade_result
+from llm_guardian.models import AttackCategory, ScanReport, SecurityScanResult, Severity
+from llm_guardian.reports.markdown import generate_markdown_report
+from llm_guardian.reports.trajectory import write_trajectory_log
+from llm_guardian.runner import run_scenario
 from llm_guardian.runner.scan_service import (
     render_report_json,
     render_report_markdown,
@@ -64,6 +75,8 @@ _AGENT_SCAN_TARGET_SETTINGS = {
         "allowed_categories": ["tool_abuse", "prompt_injection", "jailbreak"],
     },
 }
+_DEMO_AGENT_SCAN_TARGET = "demo-vulnerable-rag"
+_DEFAULT_AGENT_SCAN_OUTPUT_DIR = Path("reports") / "latest_scan"
 
 
 def _load_default_library():
@@ -154,10 +167,32 @@ def agent_scan(
     llm_provider: str,
     llm_model: str | None,
     llm_timeout_seconds: int,
+    output_dir: Path | None,
     output_format: str,
     output_file: Path | None,
     target_profile_path: Path,
 ) -> int:
+    if target == _DEMO_AGENT_SCAN_TARGET:
+        try:
+            report_path, trajectory_path, summary = _run_demo_agent_scan(
+                target=target,
+                output_dir=output_dir or _DEFAULT_AGENT_SCAN_OUTPUT_DIR,
+            )
+        except (AttackLibraryLoadError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        print("LLM Guardian Scan Complete")
+        print(f"Target: {summary['target']}")
+        print(f"Scenarios tested: {summary['scenarios_tested']}")
+        print(f"Passed: {summary['passed']}")
+        print(f"Failed: {summary['failed']}")
+        print(f"Critical: {summary['critical']}")
+        print(f"Overall Risk: {summary['overall_risk']}")
+        print(f"Report path: {report_path}")
+        print(f"Trajectory path: {trajectory_path}")
+        return 0
+
     try:
         selected_categories = _normalize_agent_scan_categories(
             category_flags=category_flags,
@@ -223,6 +258,86 @@ def agent_scan(
 
     sys.stdout.write(rendered_output + "\n")
     return 0
+
+
+def _run_demo_agent_scan(
+    *,
+    target: str,
+    output_dir: Path,
+) -> tuple[Path, Path, dict[str, int | str]]:
+    scenarios = load_attack_scenarios(DEFAULT_ATTACK_SCENARIOS_PATH)
+    target_module = _load_demo_vulnerable_rag_target_module()
+    scenario_results = [run_scenario(target_module, scenario) for scenario in scenarios]
+    findings = [grade_result(scenario, result) for scenario, result in zip(scenarios, scenario_results, strict=True)]
+    scan_result = SecurityScanResult(
+        scan_id=_build_demo_scan_id(),
+        target_name=target,
+        target_profile={
+            "target_name": target,
+            "target_type": "local_demo_rag_module",
+            "scenario_source": str(DEFAULT_ATTACK_SCENARIOS_PATH),
+            "authorization_scope": "local_demo_only",
+            "offline_only": True,
+        },
+        scenario_results=scenario_results,
+        findings=findings,
+    )
+
+    resolved_output_dir = Path(output_dir)
+    trajectory_path = write_trajectory_log(scan_result, resolved_output_dir / "trajectory.json")
+    report_path = generate_markdown_report(scan_result, resolved_output_dir / "scan_report.md")
+    summary = _build_demo_scan_summary(scan_result)
+    return report_path, trajectory_path, summary
+
+
+def _load_demo_vulnerable_rag_target_module():
+    module_path = REPOSITORY_ROOT / "demo_targets" / "vulnerable_rag_agent" / "target.py"
+    spec = importlib.util.spec_from_file_location("llm_guardian_demo_vulnerable_rag_target", module_path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Could not load demo target module: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _build_demo_scan_id() -> str:
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"demo-scan-{timestamp}"
+
+
+def _build_demo_scan_summary(scan_result: SecurityScanResult) -> dict[str, int | str]:
+    findings = scan_result.findings
+    passed = sum(1 for finding in findings if finding.verdict == "pass")
+    failed = len(findings) - passed
+    critical = sum(
+        1
+        for finding in findings
+        if finding.verdict == "fail" and finding.severity == Severity.CRITICAL
+    )
+    overall_risk = _calculate_demo_overall_risk(findings)
+    return {
+        "target": scan_result.target_name,
+        "scenarios_tested": len(findings),
+        "passed": passed,
+        "failed": failed,
+        "critical": critical,
+        "overall_risk": overall_risk,
+    }
+
+
+def _calculate_demo_overall_risk(findings) -> str:
+    failed_severities = {
+        finding.severity
+        for finding in findings
+        if finding.verdict == "fail"
+    }
+    if Severity.CRITICAL in failed_severities:
+        return "CRITICAL"
+    if Severity.HIGH in failed_severities:
+        return "HIGH"
+    if Severity.MEDIUM in failed_severities:
+        return "MEDIUM"
+    return "LOW"
 
 
 def _build_agent_scan_mutator(
@@ -380,6 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_scan_parser.add_argument("--llm-provider", choices=("fake", "ollama"), default="fake")
     agent_scan_parser.add_argument("--llm-model", default=None)
     agent_scan_parser.add_argument("--llm-timeout-seconds", type=_positive_int, default=30)
+    agent_scan_parser.add_argument("--output-dir", type=Path)
     agent_scan_parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
     agent_scan_parser.add_argument("--output-file", type=Path)
     agent_scan_parser.add_argument("--target-profile", type=Path, default=DEFAULT_TARGET_PROFILES_PATH)
@@ -422,6 +538,7 @@ def main(argv: list[str] | None = None) -> int:
                 llm_provider=args.llm_provider,
                 llm_model=args.llm_model,
                 llm_timeout_seconds=args.llm_timeout_seconds,
+                output_dir=args.output_dir,
                 output_format=args.output_format,
                 output_file=args.output_file,
                 target_profile_path=args.target_profile,

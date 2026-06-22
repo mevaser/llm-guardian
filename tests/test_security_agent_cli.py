@@ -482,3 +482,37 @@ def test_baseline_scan_command_behavior_remains_unchanged() -> None:
     assert "Target: customer_support" in result.stdout
     assert "Risk score:" in result.stdout
     assert "LLM Guardian Security Agent Report" not in result.stdout
+
+
+def test_agent_scan_demo_vulnerable_rag_writes_mvp_outputs_and_summary(tmp_path: Path) -> None:
+    output_dir = tmp_path / "nested" / "demo-scan"
+
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "demo-vulnerable-rag",
+        "--output-dir",
+        str(output_dir),
+    )
+
+    assert result.returncode == 0
+    assert output_dir.is_dir()
+
+    trajectory_path = output_dir / "trajectory.json"
+    report_path = output_dir / "scan_report.md"
+    assert trajectory_path.exists()
+    assert report_path.exists()
+
+    stdout = result.stdout
+    assert "LLM Guardian Scan Complete" in stdout
+    assert "Overall Risk" in stdout
+
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "verdict: fail" in report_text
+
+    trajectory_payload = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    assert trajectory_payload["target_name"] == "demo-vulnerable-rag"
+    assert trajectory_payload["scenarios"]
+    assert any(item["verdict"] == "fail" for item in trajectory_payload["scenarios"])
+    assert all("scenario_id" in item for item in trajectory_payload["scenarios"])
+    assert all("evidence" in item for item in trajectory_payload["scenarios"])
