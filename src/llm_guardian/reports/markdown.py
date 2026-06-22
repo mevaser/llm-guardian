@@ -69,10 +69,17 @@ def generate_markdown_report(scan_result: SecurityScanResult, output_path: Path)
                 f"- target_name: {scan_result.agent_plan.target_name}",
                 f"- scenario_count: {scan_result.agent_plan.scenario_count}",
                 f"- selected_scenario_ids: {', '.join(scan_result.agent_plan.selected_scenario_ids)}",
+                f"- scenario_source: {scan_result.agent_plan.scenario_source}",
                 f"- rationale: {scan_result.agent_plan.rationale}",
                 f"- execution_strategy: {scan_result.agent_plan.execution_strategy}",
             ]
         )
+        if scan_result.agent_plan.generated_scenario_count is not None:
+            lines.append(
+                f"- generated_scenario_count: {scan_result.agent_plan.generated_scenario_count}"
+            )
+        if scan_result.agent_plan.scenario_provider is not None:
+            lines.append(f"- scenario_provider: {scan_result.agent_plan.scenario_provider}")
 
     lines.extend(["", "## Agent Execution Trace", ""])
     if scan_result.agent_trace:
