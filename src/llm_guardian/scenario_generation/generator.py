@@ -58,7 +58,7 @@ def generate_attack_scenarios(
 
     seen_ids: set[str] = set()
     for index, item in enumerate(scenario_items, start=1):
-        normalized_item = dict(item) if isinstance(item, dict) else {"raw_item": item}
+        normalized_item = _normalize_generated_scenario_payload(item)
         scenario_id = normalized_item.get("id")
         if isinstance(scenario_id, str) and scenario_id.strip():
             normalized_item["id"] = _normalize_generated_id(scenario_id)
@@ -122,12 +122,59 @@ def _normalize_generated_id(raw_id: str) -> str:
     return f"generated-{stripped_id}"
 
 
+def _normalize_generated_scenario_payload(raw: object) -> dict[str, Any]:
+    normalized_item = dict(raw) if isinstance(raw, dict) else {"raw_item": raw}
+
+    category_value = normalized_item.get("category")
+    if isinstance(category_value, str):
+        normalized_category = _normalize_category(category_value)
+        if normalized_category is not None:
+            normalized_item["category"] = normalized_category
+
+    normalized_item = dict(normalized_item)
+    normalized_item["failure_conditions"] = _normalize_failure_conditions(normalized_item)
+    if "deterministic_failure_conditions" in normalized_item:
+        normalized_item.pop("deterministic_failure_conditions")
+    return normalized_item
+
+
+def _normalize_category(value: str) -> str | None:
+    normalized_lookup = {
+        "prompt injection": "direct_prompt_injection",
+        "direct prompt injection": "direct_prompt_injection",
+        "system prompt extraction": "system_prompt_extraction",
+        "developer instruction extraction": "system_prompt_extraction",
+        "indirect prompt injection": "indirect_prompt_injection",
+        "tool use": "unsafe_tool_use",
+        "unsafe tool use": "unsafe_tool_use",
+        "tool misuse": "unsafe_tool_use",
+        "information leakage": "secret_exfiltration",
+        "secret exfiltration": "secret_exfiltration",
+        "secret request": "secret_exfiltration",
+        "benign": "benign",
+    }
+    return normalized_lookup.get(value.strip().lower())
+
+
+def _normalize_failure_conditions(payload: dict[str, Any]) -> Any:
+    failure_conditions = payload.get("failure_conditions")
+    if isinstance(failure_conditions, list) and all(
+        isinstance(item, str) for item in failure_conditions
+    ):
+        return {"forbidden_response_contains": list(failure_conditions)}
+    if failure_conditions is not None:
+        return failure_conditions
+
+    legacy_conditions = payload.get("deterministic_failure_conditions")
+    if isinstance(legacy_conditions, list) and all(isinstance(item, str) for item in legacy_conditions):
+        return {"forbidden_response_contains": list(legacy_conditions)}
+    return failure_conditions
+
+
 def _validate_generated_scenario(scenario: AttackScenario, *, seen_ids: set[str]) -> None:
     if scenario.id in seen_ids:
         raise ValueError(f"Duplicate generated scenario id: {scenario.id}")
     if not scenario.prompt.strip():
         raise ValueError(f"Generated scenario '{scenario.id}' has an empty prompt.")
     if not scenario.failure_conditions:
-        raise ValueError(
-            f"Generated scenario '{scenario.id}' must define deterministic failure_conditions."
-        )
+        raise ValueError(f"Generated scenario '{scenario.id}' must define failure_conditions.")
