@@ -25,6 +25,7 @@ from llm_guardian.security_agent import (
 )
 from llm_guardian.security_agent.adapters import LocalTargetAdapter
 from llm_guardian.security_agent.target_profiles import TargetProfileLoadError, load_target_profile
+from llm_guardian.security_agent.target_profiles import resolve_max_mutations_per_attack
 from llm_guardian.targets.registry import create_target, list_targets
 
 
@@ -138,20 +139,6 @@ def _build_agent_scan_objective(
     )
 
 
-def _resolve_max_mutations_per_attack(
-    *,
-    cli_value: int | None,
-    target_profile: TargetProfile,
-) -> int:
-    if cli_value is not None:
-        return max(cli_value, 0)
-
-    profile_value = target_profile.mutation_policy.get("max_mutations_per_attack", 0)
-    if isinstance(profile_value, bool) or not isinstance(profile_value, int):
-        raise ValueError("Target profile mutation_policy.max_mutations_per_attack must be an integer.")
-    return max(profile_value, 0)
-
-
 def agent_scan(
     *,
     target: str,
@@ -171,8 +158,8 @@ def agent_scan(
         )
         target_agent = create_target(target)
         target_profile = load_target_profile(target_profile_path, target)
-        effective_max_mutations_per_attack = _resolve_max_mutations_per_attack(
-            cli_value=max_mutations_per_attack,
+        effective_max_mutations_per_attack = resolve_max_mutations_per_attack(
+            override_value=max_mutations_per_attack,
             target_profile=target_profile,
         )
     except TargetProfileLoadError as exc:

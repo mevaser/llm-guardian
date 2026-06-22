@@ -3,6 +3,17 @@
 from __future__ import annotations
 
 from llm_guardian.attacks.loader import load_attack_library
+from llm_guardian.app.security_agent_demo import (
+    DEFAULT_MAX_ATTEMPTS_PER_ATTACK,
+    DEFAULT_MAX_TOTAL_ATTEMPTS,
+    DEFAULT_SECURITY_AGENT_CATEGORY,
+    DEFAULT_SECURITY_AGENT_TARGET,
+    SecurityAgentDemoData,
+    build_attempt_timeline_rows,
+    build_security_agent_findings_rows,
+    get_default_max_mutations_per_attack,
+    run_security_agent_demo_scan,
+)
 from llm_guardian.app.streamlit_state import (
     LATEST_SCAN_JSON_EXPORT_KEY,
     LATEST_SCAN_MARKDOWN_EXPORT_KEY,
@@ -21,6 +32,9 @@ except ImportError as exc:  # pragma: no cover - guarded by optional dependency 
     raise RuntimeError(
         "Streamlit is required to run the dashboard. Install the optional UI dependency first."
     ) from exc
+
+
+DASHBOARD_TABS = ("Baseline Scan", "Security Agent Demo")
 
 
 def _load_category_options() -> list[str]:
@@ -118,28 +132,19 @@ def _render_report(report: ScanReport) -> None:
         _render_finding_details(finding)
 
 
-def main() -> None:
-    st.set_page_config(page_title="LLM Guardian Dashboard", layout="wide")
-    st.title("LLM Guardian")
-    st.caption("Offline dashboard for controlled local red-team scans.")
-    st.warning(
-        "This demo scans only local intentionally vulnerable targets. "
-        "It does not test real third-party systems."
-    )
-    ensure_session_state(st.session_state)
-
-    targets = list_targets()
-    category_options = _load_category_options()
-
-    with st.sidebar:
-        st.header("Scan Controls")
-        target_name = st.selectbox("Target agent", options=targets, index=0)
+def _render_baseline_scan_view(targets: list[str], category_options: list[str]) -> None:
+    st.subheader("Baseline Scan")
+    control_left, control_right = st.columns(2)
+    with control_left:
+        target_name = st.selectbox("Target agent", options=targets, index=0, key="baseline_target")
+    with control_right:
         selected_categories = st.multiselect(
             "Attack categories",
             options=category_options,
             help="Leave empty to scan all categories.",
+            key="baseline_categories",
         )
-        run_requested = st.button("Run scan", type="primary", use_container_width=True)
+    run_requested = st.button("Run baseline scan", type="primary", key="baseline_run")
 
     if run_requested:
         with st.spinner("Running deterministic offline scan..."):
@@ -174,6 +179,252 @@ def main() -> None:
         mime="text/markdown",
         use_container_width=True,
     )
+
+
+def _render_security_agent_demo_view(targets: list[str], category_options: list[str]) -> None:
+    st.subheader("Security Agent Demo")
+    target_index = (
+        targets.index(DEFAULT_SECURITY_AGENT_TARGET)
+        if DEFAULT_SECURITY_AGENT_TARGET in targets
+        else 0
+    )
+    default_categories = (
+        [DEFAULT_SECURITY_AGENT_CATEGORY]
+        if DEFAULT_SECURITY_AGENT_CATEGORY in category_options
+        else []
+    )
+
+    first_row = st.columns(2)
+    with first_row[0]:
+        target_name = st.selectbox(
+            "Target agent",
+            options=targets,
+            index=target_index,
+            key="security_agent_target",
+        )
+    with first_row[1]:
+        selected_categories = st.multiselect(
+            "Attack categories",
+            options=category_options,
+            default=default_categories,
+            key="security_agent_categories",
+        )
+
+    default_max_mutations_per_attack = get_default_max_mutations_per_attack(target_name)
+    last_target_name = st.session_state.get("security_agent_mutation_target_name")
+    if last_target_name != target_name:
+        st.session_state["security_agent_max_mutations_per_attack"] = (
+            default_max_mutations_per_attack
+        )
+        st.session_state["security_agent_mutation_target_name"] = target_name
+
+    second_row = st.columns(3)
+    with second_row[0]:
+        max_total_attempts = st.number_input(
+            "Max total attempts",
+            min_value=1,
+            value=DEFAULT_MAX_TOTAL_ATTEMPTS,
+            step=1,
+            key="security_agent_max_total_attempts",
+        )
+    with second_row[1]:
+        max_attempts_per_attack = st.number_input(
+            "Max attempts per attack",
+            min_value=1,
+            value=DEFAULT_MAX_ATTEMPTS_PER_ATTACK,
+            step=1,
+            key="security_agent_max_attempts_per_attack",
+        )
+    with second_row[2]:
+        max_mutations_per_attack = st.number_input(
+            "Max mutations per attack",
+            min_value=0,
+            value=st.session_state["security_agent_max_mutations_per_attack"],
+            step=1,
+            key="security_agent_max_mutations_per_attack",
+        )
+
+    if st.button("Run Security Agent demo", type="primary", key="security_agent_run"):
+        with st.spinner("Running deterministic SecurityAgent scan..."):
+            st.session_state["security_agent_demo_data"] = run_security_agent_demo_scan(
+                target_name=target_name,
+                categories=selected_categories or [DEFAULT_SECURITY_AGENT_CATEGORY],
+                max_total_attempts=int(max_total_attempts),
+                max_attempts_per_attack=int(max_attempts_per_attack),
+                max_mutations_per_attack=int(max_mutations_per_attack),
+            )
+
+    demo_data = st.session_state.get("security_agent_demo_data")
+    if demo_data is None:
+        st.info(
+            "Run the demo to view the SecurityAgent threat model, campaign, attempts, "
+            "and findings."
+        )
+        return
+
+    _render_security_agent_demo_result(demo_data)
+
+
+def _render_security_agent_demo_result(demo_data: SecurityAgentDemoData) -> None:
+    payload = demo_data.payload
+    summary = payload["summary"]
+    metric_columns = st.columns(7)
+    metric_columns[0].metric("Total attempts", summary["total_attempts"])
+    metric_columns[1].metric("Successful", summary["successful_attempts"])
+    metric_columns[2].metric("Failed", summary["failed_attempts"])
+    metric_columns[3].metric("Skipped/unknown", summary["skipped_or_unknown_attempts"])
+    metric_columns[4].metric("Success rate", f"{float(summary['success_rate']):.0%}")
+    metric_columns[5].metric("Findings", summary["finding_count"])
+    metric_columns[6].metric(
+        "Mutations",
+        ", ".join(summary["mutation_strategies_used"]) or "none",
+    )
+
+    _render_mapping_section(
+        "Target Profile",
+        payload["target_profile"],
+        [
+            "target_name",
+            "target_type",
+            "authorization_scope",
+            "safety_mode",
+            "available_tools",
+            "forbidden_actions",
+        ],
+    )
+    _render_mapping_section(
+        "Threat Model",
+        payload["threat_model"] or {},
+        [
+            "assets_at_risk",
+            "trust_boundaries",
+            "safety_constraints",
+            "threat_categories_in_scope",
+            "rationale",
+        ],
+    )
+    _render_mapping_section(
+        "Attack Campaign",
+        payload["attack_campaign"] or {},
+        [
+            "campaign_id",
+            "selected_categories",
+            "selected_attack_ids",
+            "total_planned_attacks",
+            "mutation_budget",
+            "retry_policy",
+            "planning_rationale",
+            "attack_ordering_rationale",
+        ],
+    )
+
+    st.subheader("Attempt Timeline")
+    st.dataframe(build_attempt_timeline_rows(payload), use_container_width=True, hide_index=True)
+
+    st.subheader("Attempt Detail")
+    for attempt in payload["attempt_history"]:
+        _render_security_agent_attempt_detail(attempt)
+
+    st.subheader("Findings")
+    st.dataframe(
+        build_security_agent_findings_rows(payload),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    download_columns = st.columns(2)
+    download_columns[0].download_button(
+        "Download SecurityAgent JSON",
+        data=demo_data.json_report,
+        file_name="security-agent-demo.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    download_columns[1].download_button(
+        "Download SecurityAgent Markdown",
+        data=demo_data.markdown_report,
+        file_name="security-agent-demo.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
+
+
+def _render_mapping_section(title: str, mapping: dict[str, object], keys: list[str]) -> None:
+    st.subheader(title)
+    for key in keys:
+        value = mapping.get(key)
+        label = key.replace("_", " ").title()
+        if isinstance(value, list):
+            st.write(f"**{label}:** {', '.join(str(item) for item in value) or 'none'}")
+        elif isinstance(value, dict):
+            st.write(f"**{label}:**")
+            st.json(value)
+        else:
+            st.write(f"**{label}:** `{value}`")
+
+
+def _render_security_agent_attempt_detail(attempt: dict[str, object]) -> None:
+    attempt_id = attempt.get("attempt_id") or (
+        f"{attempt.get('attack_id')}-attempt-{attempt.get('attempt_index')}"
+    )
+    verdict = attempt.get("verdict")
+    status = verdict.get("status", "unknown") if isinstance(verdict, dict) else "unknown"
+    title = (
+        f"{attempt.get('attack_id')} attempt {attempt.get('attempt_index')} | "
+        f"{status} | {attempt.get('mutation_strategy') or 'none'}"
+    )
+    with st.expander(title):
+        st.write(f"**Attempt ID:** `{attempt_id}`")
+        st.write("**Prompt:**")
+        st.code(str(attempt.get("prompt") or ""), language="text")
+        st.write("**Response:**")
+        st.code(str(attempt.get("response") or ""), language="text")
+
+        trajectory = attempt.get("trajectory")
+        st.write("**Trajectory:**")
+        if isinstance(trajectory, dict):
+            st.write(f"Tool names: `{', '.join(trajectory.get('tool_names', [])) or 'none'}`")
+            st.json(
+                {
+                    "tool_calls": trajectory.get("tool_calls", []),
+                    "tool_results": trajectory.get("tool_results", []),
+                    "mutation_lineage": trajectory.get("mutation_lineage", {}),
+                }
+            )
+        else:
+            st.write("No trajectory captured.")
+
+        st.write("**Observation:**")
+        st.json(attempt.get("observation") or {})
+        st.write("**Verdict:**")
+        st.json(attempt.get("verdict") or {})
+        st.write("**Evidence:**")
+        evidence = attempt.get("evidence")
+        if isinstance(evidence, list) and evidence:
+            for item in evidence:
+                st.write(f"- {item}")
+        else:
+            st.write("- No evidence captured.")
+
+
+def main() -> None:
+    st.set_page_config(page_title="LLM Guardian Dashboard", layout="wide")
+    st.title("LLM Guardian")
+    st.caption("Offline dashboard for controlled local red-team scans.")
+    st.warning(
+        "This demo scans only local intentionally vulnerable targets. "
+        "It does not test real third-party systems."
+    )
+    ensure_session_state(st.session_state)
+
+    targets = list_targets()
+    category_options = _load_category_options()
+
+    baseline_tab, security_agent_tab = st.tabs(list(DASHBOARD_TABS))
+    with baseline_tab:
+        _render_baseline_scan_view(targets, category_options)
+    with security_agent_tab:
+        _render_security_agent_demo_view(targets, category_options)
 
 
 if __name__ == "__main__":

@@ -104,6 +104,22 @@ def load_target_profile(path: Path, target_name: str) -> TargetProfile:
     )
 
 
+def resolve_max_mutations_per_attack(
+    *,
+    override_value: int | None,
+    target_profile: TargetProfile,
+) -> int:
+    """Resolve mutation budget precedence for local security-agent execution."""
+
+    if override_value is not None:
+        return max(override_value, 0)
+
+    profile_value = target_profile.mutation_policy.get("max_mutations_per_attack", 0)
+    if isinstance(profile_value, bool) or not isinstance(profile_value, int):
+        raise ValueError("Target profile mutation_policy.max_mutations_per_attack must be an integer.")
+    return max(profile_value, 0)
+
+
 def _build_model_payload(
     *,
     raw_target: dict[str, Any],
