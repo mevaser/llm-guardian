@@ -196,6 +196,7 @@ class AttackPlanner:
         objective: SecurityTestObjective,
         attack_library: Iterable[object],
         max_mutations_per_attack: int = 0,
+        mutation_strategy_mode: str = "deterministic",
     ) -> AttackCampaign:
         """Create a deterministic campaign while preserving the existing AttackPlan contract."""
 
@@ -236,11 +237,11 @@ class AttackPlanner:
             ],
             planning_rationale=list(attack_plan.strategy_notes),
             attack_ordering_rationale="Selected attacks run in deterministic attack library order.",
-            retry_policy={
-                "stop_on_success": objective.stop_on_success,
-                "max_attempts_per_attack": objective.max_attempts_per_attack,
-                "max_mutations_per_attack": mutation_budget,
-            },
+            retry_policy=self._build_retry_policy(
+                objective=objective,
+                mutation_budget=mutation_budget,
+                mutation_strategy_mode=mutation_strategy_mode,
+            ),
             mutation_budget=mutation_budget,
             max_attempts_per_attack=objective.max_attempts_per_attack,
             safety_mode=objective.safety_mode,
@@ -254,6 +255,22 @@ class AttackPlanner:
                 "target_profile_mutation_policy": dict(target_profile.mutation_policy),
             },
         )
+
+    @staticmethod
+    def _build_retry_policy(
+        *,
+        objective: SecurityTestObjective,
+        mutation_budget: int,
+        mutation_strategy_mode: str,
+    ) -> dict[str, Any]:
+        retry_policy = {
+            "stop_on_success": objective.stop_on_success,
+            "max_attempts_per_attack": objective.max_attempts_per_attack,
+            "max_mutations_per_attack": mutation_budget,
+        }
+        if mutation_strategy_mode != "deterministic":
+            retry_policy["mutation_strategy_mode"] = mutation_strategy_mode
+        return retry_policy
 
     def _derive_signal_categories(self, *, target_profile: TargetProfile) -> list[str]:
         signals = {

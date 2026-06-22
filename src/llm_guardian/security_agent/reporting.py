@@ -54,8 +54,8 @@ class SecurityAgentJsonReportBuilder:
                 "finding_count": len(findings),
             },
             "findings": [finding.model_dump(mode="json") for finding in findings],
-            "attempt_history": [attempt.model_dump(mode="json") for attempt in result.attempts],
-            "prompt_mutations": [mutation.model_dump(mode="json") for mutation in result.prompt_mutations],
+            "attempt_history": [self._serialize_attempt(attempt) for attempt in result.attempts],
+            "prompt_mutations": [self._serialize_prompt_mutation(mutation) for mutation in result.prompt_mutations],
             "risk_summary": dict(result.risk_summary),
             "narrative_summary": result.summary,
         }
@@ -89,6 +89,29 @@ class SecurityAgentJsonReportBuilder:
         if getattr(attempt, "verdict", None) is not None:
             return attempt.verdict.success
         return attempt.success
+
+    @staticmethod
+    def _serialize_attempt(attempt: Any) -> dict[str, Any]:
+        payload = attempt.model_dump(mode="json")
+        return SecurityAgentJsonReportBuilder._drop_null_llm_metadata(payload)
+
+    @staticmethod
+    def _serialize_prompt_mutation(mutation: Any) -> dict[str, Any]:
+        payload = mutation.model_dump(mode="json")
+        return SecurityAgentJsonReportBuilder._drop_null_llm_metadata(payload)
+
+    @staticmethod
+    def _drop_null_llm_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+        filtered = dict(payload)
+        for key in (
+            "llm_failure_analysis",
+            "llm_recommended_strategy",
+            "llm_validation_status",
+            "fallback_used",
+        ):
+            if filtered.get(key) is None:
+                filtered.pop(key, None)
+        return filtered
 
 
 class SecurityAgentMarkdownReportBuilder:
@@ -178,9 +201,12 @@ class SecurityAgentMarkdownReportBuilder:
                     f"- Mutation strategy: `{attempt['mutation_strategy'] or 'none'}`",
                     f"- Prompt: `{attempt['prompt']}`",
                     f"- Evidence count: {len(attempt['evidence'])}",
-                    "",
                 ]
             )
+            llm_lines = self._render_llm_mutation_lines(attempt)
+            if llm_lines:
+                lines.extend(llm_lines)
+            lines.append("")
 
         return "\n".join(lines)
 
@@ -236,3 +262,21 @@ class SecurityAgentMarkdownReportBuilder:
             if isinstance(status, str) and status.strip():
                 return status
         return "legacy_success" if attempt.get("success") is True else "legacy_non_success"
+
+    @staticmethod
+    def _render_llm_mutation_lines(attempt: dict[str, Any]) -> list[str]:
+        validation_status = attempt.get("llm_validation_status")
+        if not isinstance(validation_status, str) or not validation_status.strip():
+            return []
+
+        lines = [f"- LLM validation: `{validation_status}`"]
+        recommended_strategy = attempt.get("llm_recommended_strategy")
+        if isinstance(recommended_strategy, str) and recommended_strategy.strip():
+            lines.append(f"- LLM recommended strategy: `{recommended_strategy}`")
+        failure_analysis = attempt.get("llm_failure_analysis")
+        if isinstance(failure_analysis, str) and failure_analysis.strip():
+            lines.append(f"- LLM failure analysis: {failure_analysis}")
+        fallback_used = attempt.get("fallback_used")
+        if fallback_used is not None:
+            lines.append(f"- Fallback used: `{str(bool(fallback_used)).lower()}`")
+        return lines

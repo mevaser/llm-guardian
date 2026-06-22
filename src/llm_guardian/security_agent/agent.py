@@ -17,7 +17,7 @@ from llm_guardian.security_agent.models import (
     TargetProfile,
     ThreatModel,
 )
-from llm_guardian.security_agent.mutator import PromptMutator
+from llm_guardian.security_agent.mutator import LLMAssistedPromptMutator, PromptMutator
 from llm_guardian.security_agent.planner import AttackPlanner
 
 
@@ -31,12 +31,28 @@ class SecurityAgent:
         mutator: PromptMutator | None = None,
         finding_builder: SecurityFindingBuilder | None = None,
         max_mutations_per_attack: int = 0,
+        mutation_strategy_mode: str = "deterministic",
     ) -> None:
+        if mutation_strategy_mode not in {"deterministic", "llm-assisted"}:
+            raise ValueError("mutation_strategy_mode must be 'deterministic' or 'llm-assisted'.")
+        if mutation_strategy_mode == "llm-assisted" and not isinstance(
+            mutator, LLMAssistedPromptMutator
+        ):
+            raise ValueError(
+                "mutation_strategy_mode='llm-assisted' requires LLMAssistedPromptMutator."
+            )
+        if mutation_strategy_mode == "deterministic" and isinstance(
+            mutator, LLMAssistedPromptMutator
+        ):
+            raise ValueError(
+                "mutation_strategy_mode='deterministic' cannot use LLMAssistedPromptMutator."
+            )
         self._planner = planner or AttackPlanner()
         self._executor = executor or AttackExecutor()
         self._mutator = mutator or PromptMutator()
         self._finding_builder = finding_builder or SecurityFindingBuilder()
         self._max_mutations_per_attack = max(max_mutations_per_attack, 0)
+        self._mutation_strategy_mode = mutation_strategy_mode
 
     def run(
         self,
@@ -57,6 +73,7 @@ class SecurityAgent:
             objective=objective,
             attack_library=attacks,
             max_mutations_per_attack=self._max_mutations_per_attack,
+            mutation_strategy_mode=self._mutation_strategy_mode,
         )
         plan = attack_campaign.attack_plan
         attempts, prompt_mutations = self._execute_with_optional_mutations(
@@ -138,11 +155,11 @@ class SecurityAgent:
                 if len(attempts) >= max_total_attempts:
                     break
 
-                mutation = self._mutator.mutate(
+                mutation = self._mutate_prompt(
                     attack_id=attack_id,
-                    prompt=current_attempt.prompt,
-                    category=self._read_attack_value(metadata, "category"),
-                    failed_evidence=current_attempt.evidence,
+                    metadata=metadata,
+                    current_attempt=current_attempt,
+                    original_prompt=original_attempt.prompt,
                     strategy=strategy,
                 )
                 prompt_mutations.append(mutation)
@@ -155,6 +172,10 @@ class SecurityAgent:
                     mutation_strategy=mutation.mutation_type,
                     source_prompt=mutation.source_prompt,
                     mutation_reason_summary=mutation.reason_summary,
+                    llm_failure_analysis=mutation.llm_failure_analysis,
+                    llm_recommended_strategy=mutation.llm_recommended_strategy,
+                    llm_validation_status=mutation.llm_validation_status,
+                    fallback_used=mutation.fallback_used,
                 )
                 attempts.append(mutated_attempt)
                 if mutated_attempt.success is True:
@@ -162,6 +183,39 @@ class SecurityAgent:
                 current_attempt = mutated_attempt
 
         return attempts, prompt_mutations
+
+    def _mutate_prompt(
+        self,
+        *,
+        attack_id: str,
+        metadata: object,
+        current_attempt: AttackAttempt,
+        original_prompt: str,
+        strategy: str,
+    ) -> PromptMutation:
+        category = self._read_attack_value(metadata, "category")
+        if self._mutation_strategy_mode == "llm-assisted" and isinstance(
+            self._mutator,
+            LLMAssistedPromptMutator,
+        ):
+            return self._mutator.mutate(
+                attack_id=attack_id,
+                prompt=current_attempt.prompt,
+                category=category,
+                failed_evidence=current_attempt.evidence,
+                strategy=strategy,
+                previous_attempt=current_attempt,
+                original_prompt=original_prompt,
+                allowed_strategies=self._ordered_mutation_strategies(metadata),
+            )
+
+        return self._mutator.mutate(
+            attack_id=attack_id,
+            prompt=current_attempt.prompt,
+            category=category,
+            failed_evidence=current_attempt.evidence,
+            strategy=strategy,
+        )
 
     @staticmethod
     def _build_risk_summary(attempts: list[AttackAttempt]) -> dict[str, int | float]:

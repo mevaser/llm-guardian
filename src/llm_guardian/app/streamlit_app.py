@@ -218,7 +218,7 @@ def _render_security_agent_demo_view(targets: list[str], category_options: list[
         )
         st.session_state["security_agent_mutation_target_name"] = target_name
 
-    second_row = st.columns(3)
+    second_row = st.columns(4)
     with second_row[0]:
         max_total_attempts = st.number_input(
             "Max total attempts",
@@ -243,15 +243,33 @@ def _render_security_agent_demo_view(targets: list[str], category_options: list[
             step=1,
             key="security_agent_max_mutations_per_attack",
         )
+    with second_row[3]:
+        mutation_strategy_mode = st.selectbox(
+            "Mutation strategy mode",
+            options=("deterministic", "llm-assisted"),
+            index=0,
+            key="security_agent_mutation_strategy_mode",
+        )
+
+    llm_provider = "fake"
+    if mutation_strategy_mode == "llm-assisted":
+        llm_provider = st.selectbox(
+            "LLM provider",
+            options=("fake",),
+            index=0,
+            key="security_agent_llm_provider",
+        )
 
     if st.button("Run Security Agent demo", type="primary", key="security_agent_run"):
-        with st.spinner("Running deterministic SecurityAgent scan..."):
+        with st.spinner(f"Running {mutation_strategy_mode} SecurityAgent scan..."):
             st.session_state["security_agent_demo_data"] = run_security_agent_demo_scan(
                 target_name=target_name,
                 categories=selected_categories or [DEFAULT_SECURITY_AGENT_CATEGORY],
                 max_total_attempts=int(max_total_attempts),
                 max_attempts_per_attack=int(max_attempts_per_attack),
                 max_mutations_per_attack=int(max_mutations_per_attack),
+                mutation_strategy_mode=mutation_strategy_mode,
+                llm_provider=llm_provider,
             )
 
     demo_data = st.session_state.get("security_agent_demo_data")
@@ -396,6 +414,16 @@ def _render_security_agent_attempt_detail(attempt: dict[str, object]) -> None:
 
         st.write("**Observation:**")
         st.json(attempt.get("observation") or {})
+        if attempt.get("llm_validation_status") is not None:
+            st.write("**LLM mutation:**")
+            st.json(
+                {
+                    "failure_analysis": attempt.get("llm_failure_analysis"),
+                    "recommended_strategy": attempt.get("llm_recommended_strategy"),
+                    "validation_status": attempt.get("llm_validation_status"),
+                    "fallback_used": attempt.get("fallback_used"),
+                }
+            )
         st.write("**Verdict:**")
         st.json(attempt.get("verdict") or {})
         st.write("**Evidence:**")

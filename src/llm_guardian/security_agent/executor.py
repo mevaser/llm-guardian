@@ -51,6 +51,10 @@ class AttackExecutor:
         mutation_strategy: str | None = None,
         source_prompt: str | None = None,
         mutation_reason_summary: str | None = None,
+        llm_failure_analysis: str | None = None,
+        llm_recommended_strategy: str | None = None,
+        llm_validation_status: str | None = None,
+        fallback_used: bool | None = None,
     ) -> AttackAttempt:
         if metadata is None:
             return self._build_skipped_attempt(attack_id=attack_id, reason="attack metadata was not found")
@@ -80,6 +84,10 @@ class AttackExecutor:
             mutation_strategy=mutation_strategy,
             source_prompt=source_prompt,
             mutation_reason_summary=mutation_reason_summary,
+            llm_failure_analysis=llm_failure_analysis,
+            llm_recommended_strategy=llm_recommended_strategy,
+            llm_validation_status=llm_validation_status,
+            fallback_used=fallback_used,
         )
 
         if attack_case is None:
@@ -103,6 +111,10 @@ class AttackExecutor:
                 mutation_strategy=mutation_strategy,
                 source_prompt=source_prompt,
                 mutation_reason_summary=mutation_reason_summary,
+                llm_failure_analysis=llm_failure_analysis,
+                llm_recommended_strategy=llm_recommended_strategy,
+                llm_validation_status=llm_validation_status,
+                fallback_used=fallback_used,
                 response=execution_result.response,
                 trace=execution_result.trace,
                 success=None,
@@ -129,6 +141,10 @@ class AttackExecutor:
             mutation_strategy=mutation_strategy,
             source_prompt=source_prompt,
             mutation_reason_summary=mutation_reason_summary,
+            llm_failure_analysis=llm_failure_analysis,
+            llm_recommended_strategy=llm_recommended_strategy,
+            llm_validation_status=llm_validation_status,
+            fallback_used=fallback_used,
         )
 
     @staticmethod
@@ -232,6 +248,10 @@ class AttackExecutor:
         mutation_strategy: str | None = None,
         source_prompt: str | None = None,
         mutation_reason_summary: str | None = None,
+        llm_failure_analysis: str | None = None,
+        llm_recommended_strategy: str | None = None,
+        llm_validation_status: str | None = None,
+        fallback_used: bool | None = None,
     ) -> AttackAttempt:
         matched_success_indicators = AttackExecutor._matched_indicators_from_trace(
             result.trace,
@@ -261,6 +281,10 @@ class AttackExecutor:
             mutation_strategy=mutation_strategy,
             source_prompt=source_prompt,
             mutation_reason_summary=mutation_reason_summary,
+            llm_failure_analysis=llm_failure_analysis,
+            llm_recommended_strategy=llm_recommended_strategy,
+            llm_validation_status=llm_validation_status,
+            fallback_used=fallback_used,
             response=result.response,
             trace=result.trace,
             success=verdict.success,
@@ -327,6 +351,10 @@ class AttackExecutor:
         mutation_strategy: str | None,
         source_prompt: str | None,
         mutation_reason_summary: str | None,
+        llm_failure_analysis: str | None,
+        llm_recommended_strategy: str | None,
+        llm_validation_status: str | None,
+        fallback_used: bool | None,
     ) -> Trajectory:
         normalized_metadata = AttackExecutor._normalized_target_metadata(target_metadata)
         all_tool_calls = AttackExecutor._first_non_empty_dict_list(tool_calls, normalized_metadata.get("tool_calls"))
@@ -357,6 +385,10 @@ class AttackExecutor:
                 "mutation_strategy": mutation_strategy,
                 "source_prompt": source_prompt,
                 "mutation_reason_summary": mutation_reason_summary,
+                "llm_failure_analysis": llm_failure_analysis,
+                "llm_recommended_strategy": llm_recommended_strategy,
+                "llm_validation_status": llm_validation_status,
+                "fallback_used": fallback_used,
             }.items()
             if value is not None
         }
