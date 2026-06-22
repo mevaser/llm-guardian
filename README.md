@@ -36,6 +36,17 @@ Critical: 2
 Overall Risk: CRITICAL
 ```
 
+## Streamlit UI
+Run the Streamlit UI with:
+
+```powershell
+streamlit run streamlit_app.py
+```
+
+The Streamlit UI uses the same `SecurityScanAgent` workflow as the CLI. It does not
+duplicate scan logic; it runs the agent, then displays the generated plan, trace,
+findings, adaptive probes, trajectory JSON, and Markdown report.
+
 ## Output files
 The demo command writes:
 

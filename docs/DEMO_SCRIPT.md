@@ -13,6 +13,16 @@ Run:
 python -m llm_guardian.cli agent-scan --target demo-vulnerable-rag --output-dir reports/demo_scan
 ```
 
+## Streamlit Mode
+Run:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+This UI runs the same `SecurityScanAgent` workflow as the CLI and displays the same
+agent plan, trace, adaptive probes, trajectory JSON, and Markdown report.
+
 ## Expected Output
 The stable console summary is:
 
@@ -26,6 +36,8 @@ The stable console summary is:
 - `Overall Risk: CRITICAL`
 
 ## What to Show in the Demo
+- CLI mode for the deterministic scan summary
+- Streamlit UI mode for interactive inspection of the same scan outputs
 - `data/attack_scenarios.yaml`
 - `demo_targets/vulnerable_rag_agent/`
 - `reports/demo_scan/scan_report.md`
