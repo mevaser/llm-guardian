@@ -28,6 +28,7 @@ from llm_guardian.security_agent.target_profiles import (
     TargetProfileLoadError,
     load_target_profile,
     load_target_profiles,
+    resolve_max_mutations_per_attack,
 )
 
 __all__ = [
@@ -56,4 +57,5 @@ __all__ = [
     "Verdict",
     "load_target_profile",
     "load_target_profiles",
+    "resolve_max_mutations_per_attack",
 ]
