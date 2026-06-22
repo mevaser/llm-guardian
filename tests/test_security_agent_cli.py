@@ -199,11 +199,17 @@ def test_agent_scan_uses_yaml_mutation_budget_for_mutation_challenge_target() ->
     assert [attempt["attempt_index"] for attempt in ta_001_attempts] == [1, 2]
     assert ta_001_attempts[0]["verdict"]["status"] == "blocked"
     assert ta_001_attempts[0]["success"] is False
+    assert ta_001_attempts[0]["trajectory"]["tool_calls"] == []
     assert ta_001_attempts[0]["observation"]["target_refused"] is True
+    assert ta_001_attempts[0]["observation"]["tool_called"] is False
+    assert "Tool called: simulated_email_tool" not in ta_001_attempts[0]["observation"]["relevant_evidence"]
     assert ta_001_attempts[1]["verdict"]["status"] == "success"
     assert ta_001_attempts[1]["success"] is True
     assert ta_001_attempts[1]["mutation_strategy"] == "indirect_framing"
     assert ta_001_attempts[1]["trajectory"]["mutation_lineage"]["mutation_strategy"] == "indirect_framing"
+    assert ta_001_attempts[1]["trajectory"]["tool_calls"][0]["tool_name"] == "simulated_email_tool"
+    assert ta_001_attempts[1]["observation"]["tool_called"] is True
+    assert "Tool called: simulated_email_tool" in ta_001_attempts[1]["observation"]["relevant_evidence"]
     assert ta_001_attempts[1]["trajectory"]["tool_names"] == ["simulated_email_tool"]
     assert ta_001_attempts[1]["observation"]["mock_side_effects_detected"] is True
     assert ta_001_attempts[1]["observation"]["external_call_attempted"] is False

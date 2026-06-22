@@ -57,6 +57,19 @@ def test_security_agent_demo_scan_prepares_mutation_retry_payload() -> None:
     assert payload["attack_campaign"]["selected_categories"] == ["tool_abuse"]
     assert payload["attack_campaign"]["mutation_budget"] == 1
     assert payload["attack_campaign"]["retry_policy"]["max_mutations_per_attack"] == 1
+    ta_001_attempt_1 = payload["attempt_history"][0]
+    ta_001_attempt_2 = payload["attempt_history"][1]
+
+    assert ta_001_attempt_1["attack_id"] == "TA-001"
+    assert ta_001_attempt_1["verdict"]["status"] == "blocked"
+    assert ta_001_attempt_1["trajectory"]["tool_calls"] == []
+    assert ta_001_attempt_1["observation"]["tool_called"] is False
+    assert "Tool called: simulated_email_tool" not in ta_001_attempt_1["observation"]["relevant_evidence"]
+    assert ta_001_attempt_2["attack_id"] == "TA-001"
+    assert ta_001_attempt_2["verdict"]["status"] == "success"
+    assert ta_001_attempt_2["trajectory"]["tool_calls"][0]["tool_name"] == "simulated_email_tool"
+    assert ta_001_attempt_2["observation"]["tool_called"] is True
+    assert "Tool called: simulated_email_tool" in ta_001_attempt_2["observation"]["relevant_evidence"]
 
     timeline_rows = build_attempt_timeline_rows(payload)
     assert timeline_rows[0]["Attack ID"] == "TA-001"

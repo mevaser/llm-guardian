@@ -217,11 +217,15 @@ def test_attack_executor_detects_metadata_only_signals_nested_under_target_metad
 
     assert attempt.trajectory is not None
     assert attempt.trajectory.tool_names == ["nested_email_tool"]
+    assert attempt.trajectory.tool_calls == []
     assert attempt.trajectory.tool_results[0]["metadata"]["side_effects"] == "external_network_attempt"
     assert attempt.observation is not None
-    assert attempt.observation.tool_called is True
+    assert attempt.observation.tool_called is False
     assert attempt.observation.external_call_attempted is True
     assert attempt.observation.mock_side_effects_detected is False
+    assert not any(
+        evidence == "Tool called: nested_email_tool" for evidence in attempt.observation.relevant_evidence
+    )
     assert attempt.verdict is not None
     assert attempt.verdict.status == "failed"
 
