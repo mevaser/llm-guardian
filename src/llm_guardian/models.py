@@ -121,6 +121,24 @@ class AttackScenarioLibrary(StrictBaseModel):
         return self
 
 
+class ScenarioRunResult(StrictBaseModel):
+    """Raw execution record for one attack scenario against a local target module."""
+
+    scenario_id: str
+    prompt: str
+    target_response: str
+    tool_trace: list[dict[str, Any]] = Field(default_factory=list)
+    retrieved_context: str = ""
+    raw_result: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("scenario_id", "prompt", "target_response")
+    @classmethod
+    def validate_non_empty_run_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
 class TargetResponse(StrictBaseModel):
     """Deterministic target output plus optional operational trace data."""
 
