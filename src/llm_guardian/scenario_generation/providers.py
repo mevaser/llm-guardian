@@ -118,6 +118,8 @@ class GroqScenarioLLMProvider:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "LLM-Guardian/0.1",
             },
             method="POST",
         )
@@ -126,9 +128,14 @@ class GroqScenarioLLMProvider:
             with urllib_request.urlopen(completion_request) as response:
                 response_payload = json.loads(response.read().decode("utf-8"))
         except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            reason = detail.strip() or exc.reason or f"HTTP {exc.code}"
-            raise RuntimeError(f"Groq scenario generation failed: {reason}") from exc
+            detail = _read_http_error_body(exc)
+            if detail:
+                raise RuntimeError(
+                    f"Groq scenario generation failed: HTTP {exc.code}: {detail}"
+                ) from exc
+            raise RuntimeError(
+                f"Groq scenario generation failed: HTTP {exc.code}: {exc.reason}"
+            ) from exc
         except error.URLError as exc:
             raise RuntimeError(f"Groq scenario generation failed: {exc.reason}") from exc
         except json.JSONDecodeError as exc:
@@ -157,3 +164,10 @@ def _build_generation_prompt(request: ScenarioGenerationRequest) -> str:
         "Each scenario must include: id, name, category, prompt, severity, "
         "expected_secure_behavior, and deterministic failure_conditions."
     )
+
+
+def _read_http_error_body(exc: error.HTTPError) -> str:
+    try:
+        return exc.read().decode("utf-8", errors="replace").strip()
+    except Exception:
+        return ""

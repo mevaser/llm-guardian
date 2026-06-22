@@ -1,4 +1,6 @@
 import json
+from io import BytesIO
+from urllib.error import HTTPError
 
 import pytest
 
@@ -151,7 +153,9 @@ def test_groq_scenario_provider_builds_expected_request_payload(
     assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
     assert captured["method"] == "POST"
     assert captured["headers"]["authorization"] == "Bearer test"
+    assert captured["headers"]["accept"] == "application/json"
     assert captured["headers"]["content-type"] == "application/json"
+    assert captured["headers"]["user-agent"] == "LLM-Guardian/0.1"
     assert captured["payload"] == {
         "model": "llama-3.3-70b-versatile",
         "messages": [
@@ -173,3 +177,32 @@ def test_groq_scenario_provider_builds_expected_request_payload(
         ],
         "temperature": 0.2,
     }
+
+
+def test_groq_scenario_provider_includes_http_error_body_in_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = ScenarioGenerationRequest(
+        target_name="demo-vulnerable-rag",
+        target_profile_summary="Local demo target.",
+        count=2,
+    )
+
+    def fake_urlopen(_request):
+        raise HTTPError(
+            url="https://api.groq.com/openai/v1/chat/completions",
+            code=403,
+            msg="Forbidden",
+            hdrs=None,
+            fp=BytesIO(b'{"error":{"code":1010,"message":"Access denied"}}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    provider = GroqScenarioLLMProvider(api_key="test")
+
+    with pytest.raises(
+        RuntimeError,
+        match='Groq scenario generation failed: HTTP 403: \\{"error":\\{"code":1010,"message":"Access denied"\\}\\}',
+    ):
+        provider.generate_scenarios(request)
