@@ -1,8 +1,13 @@
 import importlib
+import inspect
+import sys
+import types
 
 import pytest
 
 from llm_guardian.app.security_agent_demo import (
+    DEFAULT_SECURITY_AGENT_CATEGORY,
+    DEFAULT_SECURITY_AGENT_TARGET,
     build_attempt_timeline_rows,
     build_security_agent_findings_rows,
     get_default_max_mutations_per_attack,
@@ -22,13 +27,51 @@ from llm_guardian.runner.scan_service import (
 )
 
 
-def test_streamlit_app_module_imports_when_streamlit_is_available() -> None:
-    pytest.importorskip("streamlit")
+@pytest.fixture
+def streamlit_app_module(monkeypatch: pytest.MonkeyPatch):
+    fake_streamlit = types.ModuleType("streamlit")
+    monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
+    sys.modules.pop("llm_guardian.app.streamlit_app", None)
 
-    module = importlib.import_module("llm_guardian.app.streamlit_app")
+    return importlib.import_module("llm_guardian.app.streamlit_app")
+
+
+def test_streamlit_app_module_imports_with_stubbed_streamlit(
+    streamlit_app_module,
+) -> None:
+    module = streamlit_app_module
 
     assert hasattr(module, "main")
     assert module.DASHBOARD_TABS == ("Baseline Scan", "Security Agent Demo")
+
+
+def test_run_security_agent_demo_scan_signature_accepts_streamlit_llm_kwargs() -> None:
+    parameters = inspect.signature(run_security_agent_demo_scan).parameters
+
+    assert "mutation_strategy_mode" in parameters
+    assert parameters["mutation_strategy_mode"].default == "deterministic"
+    assert "llm_provider" in parameters
+    assert parameters["llm_provider"].default == "fake"
+    assert "llm_model" in parameters
+    assert parameters["llm_model"].default is None
+    assert "llm_timeout_seconds" in parameters
+    assert parameters["llm_timeout_seconds"].default == 30
+
+
+def test_streamlit_app_and_security_agent_demo_stay_api_compatible(
+    streamlit_app_module,
+) -> None:
+    helper_parameters = inspect.signature(run_security_agent_demo_scan).parameters
+    caller_source = inspect.getsource(streamlit_app_module._render_security_agent_demo_view)
+
+    for parameter_name in (
+        "mutation_strategy_mode",
+        "llm_provider",
+        "llm_model",
+        "llm_timeout_seconds",
+    ):
+        assert parameter_name in helper_parameters
+        assert f"{parameter_name}={parameter_name}" in caller_source
 
 
 def test_store_scan_state_persists_report_and_export_payloads() -> None:
@@ -145,6 +188,80 @@ def test_security_agent_demo_scan_supports_llm_assisted_ollama_mode() -> None:
     assert payload["prompt_mutations"]
     assert payload["prompt_mutations"][0]["llm_validation_status"] is not None
     assert payload["prompt_mutations"][0]["fallback_used"] in {True, False}
+
+
+def test_security_agent_demo_scan_ollama_mutator_wires_provider_model_and_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    streamlit_app_module,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeOllamaLLMClient:
+        def __init__(self, *, model: str, timeout_seconds: int) -> None:
+            captured["model"] = model
+            captured["timeout_seconds"] = timeout_seconds
+
+    class FakeLLMAssistedPromptMutator:
+        def __init__(self, *, llm_client: object) -> None:
+            captured["llm_client"] = llm_client
+
+    class FakeSecurityAgent:
+        def __init__(self, *, max_mutations_per_attack: int, mutation_strategy_mode: str, mutator: object) -> None:
+            captured["max_mutations_per_attack"] = max_mutations_per_attack
+            captured["mutation_strategy_mode"] = mutation_strategy_mode
+            captured["mutator"] = mutator
+
+        def run(self, **_: object) -> object:
+            return object()
+
+    class FakeJsonReportBuilder:
+        def build(self, **_: object) -> dict[str, object]:
+            return {}
+
+    class FakeMarkdownReportBuilder:
+        def __init__(self, *, json_builder: object) -> None:
+            captured["json_builder"] = json_builder
+
+        def build(self, **_: object) -> str:
+            return "report"
+
+    monkeypatch.setattr(
+        "llm_guardian.app.security_agent_demo.OllamaLLMClient",
+        FakeOllamaLLMClient,
+    )
+    monkeypatch.setattr(
+        "llm_guardian.app.security_agent_demo.LLMAssistedPromptMutator",
+        FakeLLMAssistedPromptMutator,
+    )
+    monkeypatch.setattr(
+        "llm_guardian.app.security_agent_demo.SecurityAgent",
+        FakeSecurityAgent,
+    )
+    monkeypatch.setattr(
+        "llm_guardian.app.security_agent_demo.SecurityAgentJsonReportBuilder",
+        FakeJsonReportBuilder,
+    )
+    monkeypatch.setattr(
+        "llm_guardian.app.security_agent_demo.SecurityAgentMarkdownReportBuilder",
+        FakeMarkdownReportBuilder,
+    )
+
+    streamlit_app_module.run_security_agent_demo_scan(
+        mutation_strategy_mode="llm-assisted",
+        llm_provider="ollama",
+        llm_model="qwen2.5:7b-instruct",
+        llm_timeout_seconds=7,
+        max_total_attempts=1,
+        max_attempts_per_attack=1,
+        categories=[DEFAULT_SECURITY_AGENT_CATEGORY],
+        target_name=DEFAULT_SECURITY_AGENT_TARGET,
+    )
+
+    assert captured["mutation_strategy_mode"] == "llm-assisted"
+    assert captured["model"] == "qwen2.5:7b-instruct"
+    assert captured["timeout_seconds"] == 7
+    assert isinstance(captured["llm_client"], FakeOllamaLLMClient)
+    assert isinstance(captured["mutator"], FakeLLMAssistedPromptMutator)
 
 
 def test_security_agent_demo_scan_deterministic_mutation_payload_omits_null_llm_metadata() -> None:
