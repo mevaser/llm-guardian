@@ -3,25 +3,17 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import sys
 from collections.abc import Iterable
-from datetime import UTC, datetime
 from pathlib import Path
 
-from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library, load_attack_scenarios
+from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
 from llm_guardian.config import (
     DEFAULT_ATTACK_LIBRARY_PATH,
-    DEFAULT_ATTACK_SCENARIOS_PATH,
     DEFAULT_TARGET_PROFILES_PATH,
-    REPOSITORY_ROOT,
 )
-from llm_guardian.evaluators import grade_result
 from llm_guardian.models import AttackCategory, ScanReport, SecurityScanResult, Severity
-from llm_guardian.reports.markdown import generate_markdown_report
-from llm_guardian.reports.trajectory import write_trajectory_log
-from llm_guardian.runner import run_scenario
 from llm_guardian.runner.scan_service import (
     render_report_json,
     render_report_markdown,
@@ -34,6 +26,7 @@ from llm_guardian.security_agent import (
     SecurityAgentMarkdownReportBuilder,
     SecurityTestObjective,
     OllamaLLMClient,
+    SecurityScanAgent,
     StaticFakeLLMClient,
     TargetProfile,
 )
@@ -265,44 +258,15 @@ def _run_demo_agent_scan(
     target: str,
     output_dir: Path,
 ) -> tuple[Path, Path, dict[str, int | str]]:
-    scenarios = load_attack_scenarios(DEFAULT_ATTACK_SCENARIOS_PATH)
-    target_module = _load_demo_vulnerable_rag_target_module()
-    scenario_results = [run_scenario(target_module, scenario) for scenario in scenarios]
-    findings = [grade_result(scenario, result) for scenario, result in zip(scenarios, scenario_results, strict=True)]
-    scan_result = SecurityScanResult(
-        scan_id=_build_demo_scan_id(),
+    scan_result = SecurityScanAgent().run(
         target_name=target,
-        target_profile={
-            "target_name": target,
-            "target_type": "local_demo_rag_module",
-            "scenario_source": str(DEFAULT_ATTACK_SCENARIOS_PATH),
-            "authorization_scope": "local_demo_only",
-            "offline_only": True,
-        },
-        scenario_results=scenario_results,
-        findings=findings,
+        output_dir=output_dir,
     )
-
     resolved_output_dir = Path(output_dir)
-    trajectory_path = write_trajectory_log(scan_result, resolved_output_dir / "trajectory.json")
-    report_path = generate_markdown_report(scan_result, resolved_output_dir / "scan_report.md")
+    trajectory_path = resolved_output_dir / "trajectory.json"
+    report_path = resolved_output_dir / "scan_report.md"
     summary = _build_demo_scan_summary(scan_result)
     return report_path, trajectory_path, summary
-
-
-def _load_demo_vulnerable_rag_target_module():
-    module_path = REPOSITORY_ROOT / "demo_targets" / "vulnerable_rag_agent" / "target.py"
-    spec = importlib.util.spec_from_file_location("llm_guardian_demo_vulnerable_rag_target", module_path)
-    if spec is None or spec.loader is None:
-        raise ValueError(f"Could not load demo target module: {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _build_demo_scan_id() -> str:
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return f"demo-scan-{timestamp}"
 
 
 def _build_demo_scan_summary(scan_result: SecurityScanResult) -> dict[str, int | str]:

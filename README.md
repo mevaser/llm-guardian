@@ -6,11 +6,12 @@ LLM Guardian is a deterministic MVP for evaluating LLM and agent security behavi
 The project is intentionally scoped as an offline-first course submission. It focuses on stable, reproducible evaluation behavior rather than production deployment.
 
 ## What the agent does
+- `SecurityScanAgent` is the explicit evaluator agent for the MVP demo scan.
 - Loads attack scenarios from YAML.
-- Runs scenarios against a demo vulnerable RAG agent.
-- Captures response, retrieved context, and tool trace.
+- Plans and runs scenarios against a demo vulnerable RAG agent.
+- Observes response, retrieved context, and tool trace.
 - Grades behavior using deterministic rules.
-- Writes trajectory JSON.
+- Writes trajectory JSON evidence.
 - Writes a Markdown report.
 
 ## Quick demo

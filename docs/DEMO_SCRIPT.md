@@ -4,7 +4,7 @@
 LLM Guardian is a local AI Red Team evaluation project for testing how AI and LLM-based agents behave under security scenarios. The goal is to run structured attacks against a target agent, observe what it does, and turn that behavior into clear security evidence. In this MVP, everything is deterministic and offline, so the demo is stable, repeatable, and does not depend on live external systems.
 
 ## Architecture, 60 seconds
-The pipeline starts by loading attack scenarios from YAML in `data/attack_scenarios.yaml`. Those scenarios run against an intentionally vulnerable demo RAG agent in `demo_targets/vulnerable_rag_agent/`. During execution, the runner captures the model response, the retrieved context, and the tool trace so we can inspect the full trajectory instead of only the final answer. After that, deterministic grading rules evaluate each scenario as pass or fail based on expected unsafe behavior. The final outputs are written as a trajectory JSON artifact and a Markdown report for review.
+The explicit evaluator agent is `SecurityScanAgent`. It loads attack scenarios from YAML in `data/attack_scenarios.yaml`, runs them against an intentionally vulnerable demo RAG agent in `demo_targets/vulnerable_rag_agent/`, observes the model response, retrieved context, and tool trace, then grades each scenario with deterministic rules. The final outputs are written as a trajectory JSON artifact and a Markdown report for review.
 
 ## Live Command
 Run:
@@ -42,4 +42,4 @@ The failure is intentional. The vulnerable RAG agent treats retrieved content as
 - No benchmark adapters yet.
 
 ## Closing
-This demonstrates an agentic security evaluator because it plans and runs scenarios, observes behavior, captures trajectory, grades outcomes, and produces evidence that a developer can inspect.
+This demonstrates an agentic security evaluator because `SecurityScanAgent` plans and runs scenarios, observes behavior, grades outcomes, and writes evidence that a developer can inspect.

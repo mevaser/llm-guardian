@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
 
+from llm_guardian.attacks.loader import load_attack_scenarios
+from llm_guardian.config import DEFAULT_ATTACK_SCENARIOS_PATH, REPOSITORY_ROOT
+from llm_guardian.evaluators import grade_result
+from llm_guardian.models import SecurityScanResult
+from llm_guardian.reports.markdown import generate_markdown_report
+from llm_guardian.reports.trajectory import write_trajectory_log
+from llm_guardian.runner import run_scenario
 from llm_guardian.security_agent.adapters import TargetAdapter
 from llm_guardian.security_agent.executor import AttackExecutor
 from llm_guardian.security_agent.findings import SecurityFindingBuilder
@@ -313,3 +323,72 @@ class SecurityAgent:
             f"skipped_or_unknown: {risk_summary['skipped_or_unknown_attempts']}; "
             f"success_rate: {float(risk_summary['success_rate']):.2f}."
         )
+
+
+class SecurityScanAgent:
+    """Run the deterministic MVP scenario-scan pipeline for approved local demo targets."""
+
+    _DEMO_TARGET_NAME = "demo-vulnerable-rag"
+
+    def run(self, target_name: str, output_dir: Path) -> SecurityScanResult:
+        scenarios = self._load_scenarios()
+        target_module = self._resolve_target(target_name)
+        scenario_results = self._run_scenarios(target_module=target_module, scenarios=scenarios)
+        findings = self._grade_results(scenarios=scenarios, scenario_results=scenario_results)
+        scan_result = SecurityScanResult(
+            scan_id=self._build_scan_id(),
+            target_name=target_name,
+            target_profile=self._build_target_profile(target_name),
+            scenario_results=scenario_results,
+            findings=findings,
+        )
+        self._write_outputs(scan_result=scan_result, output_dir=output_dir)
+        return scan_result
+
+    def _load_scenarios(self):
+        return load_attack_scenarios(DEFAULT_ATTACK_SCENARIOS_PATH)
+
+    def _resolve_target(self, target_name: str):
+        if target_name != self._DEMO_TARGET_NAME:
+            raise ValueError(
+                f"Unknown target '{target_name}'. Supported targets: {self._DEMO_TARGET_NAME}"
+            )
+
+        module_path = REPOSITORY_ROOT / "demo_targets" / "vulnerable_rag_agent" / "target.py"
+        spec = importlib.util.spec_from_file_location(
+            "llm_guardian_demo_vulnerable_rag_target",
+            module_path,
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError(f"Could not load demo target module: {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _run_scenarios(self, *, target_module, scenarios):
+        return [run_scenario(target_module, scenario) for scenario in scenarios]
+
+    def _grade_results(self, *, scenarios, scenario_results):
+        return [
+            grade_result(scenario, result)
+            for scenario, result in zip(scenarios, scenario_results, strict=True)
+        ]
+
+    def _write_outputs(self, *, scan_result: SecurityScanResult, output_dir: Path) -> None:
+        resolved_output_dir = Path(output_dir)
+        write_trajectory_log(scan_result, resolved_output_dir / "trajectory.json")
+        generate_markdown_report(scan_result, resolved_output_dir / "scan_report.md")
+
+    @staticmethod
+    def _build_scan_id() -> str:
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        return f"demo-scan-{timestamp}"
+
+    def _build_target_profile(self, target_name: str) -> dict[str, str | bool]:
+        return {
+            "target_name": target_name,
+            "target_type": "local_demo_rag_module",
+            "scenario_source": str(DEFAULT_ATTACK_SCENARIOS_PATH),
+            "authorization_scope": "local_demo_only",
+            "offline_only": True,
+        }
