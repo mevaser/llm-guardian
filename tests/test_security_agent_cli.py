@@ -523,3 +523,62 @@ def test_agent_scan_demo_vulnerable_rag_writes_mvp_outputs_and_summary(tmp_path:
     assert any(item["verdict"] == "fail" for item in trajectory_payload["scenarios"])
     assert all("scenario_id" in item for item in trajectory_payload["scenarios"])
     assert all("evidence" in item for item in trajectory_payload["scenarios"])
+
+
+def test_generate_scenarios_command_writes_yaml(tmp_path: Path) -> None:
+    output_path = tmp_path / "generated_attack_scenarios.yaml"
+
+    result = run_cli(
+        "generate-scenarios",
+        "--target",
+        "demo-vulnerable-rag",
+        "--count",
+        "2",
+        "--output",
+        str(output_path),
+        "--provider",
+        "fake",
+    )
+
+    assert result.returncode == 0
+    assert output_path.exists()
+    assert "Scenario generation complete" in result.stdout
+    assert "Accepted: 2" in result.stdout
+    assert "Rejected: 0" in result.stdout
+    output_text = output_path.read_text(encoding="utf-8")
+    assert "scenarios:" in output_text
+    assert "generated-" in output_text
+
+
+def test_agent_scan_demo_vulnerable_rag_accepts_generated_scenario_file(tmp_path: Path) -> None:
+    scenario_path = tmp_path / "generated_attack_scenarios.yaml"
+    generate_result = run_cli(
+        "generate-scenarios",
+        "--target",
+        "demo-vulnerable-rag",
+        "--count",
+        "2",
+        "--output",
+        str(scenario_path),
+        "--provider",
+        "fake",
+    )
+    assert generate_result.returncode == 0
+
+    output_dir = tmp_path / "generated-scan"
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "demo-vulnerable-rag",
+        "--scenario-file",
+        str(scenario_path),
+        "--output-dir",
+        str(output_dir),
+    )
+
+    assert result.returncode == 0
+    assert "Scenarios tested: 2" in result.stdout
+    trajectory_payload = json.loads((output_dir / "trajectory.json").read_text(encoding="utf-8"))
+    assert trajectory_payload["agent_plan"]["scenario_count"] == 2
+    assert trajectory_payload["target_profile"]["scenario_source"] == str(scenario_path)
+    assert trajectory_payload["agent_plan"]["scenario_source"] == str(scenario_path)

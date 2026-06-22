@@ -19,6 +19,11 @@ from llm_guardian.runner.scan_service import (
     render_report_markdown,
     run_offline_scan,
 )
+from llm_guardian.scenario_generation import (
+    FakeScenarioLLMProvider,
+    generate_attack_scenarios,
+    write_generated_scenarios_yaml,
+)
 from llm_guardian.security_agent import (
     LLMAssistedPromptMutator,
     SecurityAgent,
@@ -160,6 +165,7 @@ def agent_scan(
     llm_provider: str,
     llm_model: str | None,
     llm_timeout_seconds: int,
+    scenario_file: Path | None,
     output_dir: Path | None,
     output_format: str,
     output_file: Path | None,
@@ -170,6 +176,7 @@ def agent_scan(
             report_path, trajectory_path, summary = _run_demo_agent_scan(
                 target=target,
                 output_dir=output_dir or _DEFAULT_AGENT_SCAN_OUTPUT_DIR,
+                scenario_file=scenario_file,
             )
         except (AttackLibraryLoadError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
@@ -258,10 +265,13 @@ def _run_demo_agent_scan(
     *,
     target: str,
     output_dir: Path,
+    scenario_file: Path | None = None,
 ) -> tuple[Path, Path, dict[str, int | str]]:
     scan_result = SecurityScanAgent().run(
         target_name=target,
         output_dir=output_dir,
+        scenario_file=scenario_file,
+        scenario_provider="fake" if scenario_file is not None else None,
     )
     resolved_output_dir = Path(output_dir)
     trajectory_path = resolved_output_dir / "trajectory.json"
@@ -334,6 +344,41 @@ def _build_llm_client(*, llm_provider: str, llm_model: str | None, llm_timeout_s
         return OllamaLLMClient(model=llm_model, timeout_seconds=llm_timeout_seconds)
 
     raise ValueError(f"Unsupported LLM provider '{llm_provider}'.")
+
+
+def generate_scenarios(
+    *,
+    target: str,
+    count: int,
+    output: Path,
+    provider: str,
+) -> int:
+    if provider != "fake":
+        print(f"Unsupported scenario provider '{provider}'.", file=sys.stderr)
+        return 1
+
+    result = generate_attack_scenarios(
+        target_name=target,
+        target_profile_summary=(
+            "Local intentionally vulnerable demo target with deterministic grading and offline execution."
+        ),
+        provider=FakeScenarioLLMProvider(),
+        count=count,
+    )
+    write_generated_scenarios_yaml(result.accepted_scenarios, output)
+
+    print("Scenario generation complete")
+    print(f"Target: {target}")
+    print(f"Provider: {provider}")
+    print(f"Requested: {count}")
+    print(f"Accepted: {len(result.accepted_scenarios)}")
+    print(f"Rejected: {len(result.rejected_scenarios)}")
+    print(f"Output path: {output}")
+    if result.validation_errors:
+        print("Validation errors:")
+        for error in result.validation_errors:
+            print(f"- {error}")
+    return 0
 
 
 def list_attacks() -> int:
@@ -461,10 +506,20 @@ def build_parser() -> argparse.ArgumentParser:
     agent_scan_parser.add_argument("--llm-provider", choices=("fake", "ollama"), default="fake")
     agent_scan_parser.add_argument("--llm-model", default=None)
     agent_scan_parser.add_argument("--llm-timeout-seconds", type=_positive_int, default=30)
+    agent_scan_parser.add_argument("--scenario-file", type=Path, default=None)
     agent_scan_parser.add_argument("--output-dir", type=Path)
     agent_scan_parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
     agent_scan_parser.add_argument("--output-file", type=Path)
     agent_scan_parser.add_argument("--target-profile", type=Path, default=DEFAULT_TARGET_PROFILES_PATH)
+
+    generate_scenarios_parser = subparsers.add_parser(
+        "generate-scenarios",
+        help="Generate optional attack scenarios with a provider behind a stable interface.",
+    )
+    generate_scenarios_parser.add_argument("--target", required=True)
+    generate_scenarios_parser.add_argument("--count", type=_positive_int, default=2)
+    generate_scenarios_parser.add_argument("--output", type=Path, required=True)
+    generate_scenarios_parser.add_argument("--provider", choices=("fake",), default="fake")
 
     report_parser = subparsers.add_parser("validate-report", help="Validate a structured report JSON file.")
     report_parser.add_argument("path", type=Path)
@@ -504,10 +559,18 @@ def main(argv: list[str] | None = None) -> int:
                 llm_provider=args.llm_provider,
                 llm_model=args.llm_model,
                 llm_timeout_seconds=args.llm_timeout_seconds,
+                scenario_file=args.scenario_file,
                 output_dir=args.output_dir,
                 output_format=args.output_format,
                 output_file=args.output_file,
                 target_profile_path=args.target_profile,
+            )
+        if args.command == "generate-scenarios":
+            return generate_scenarios(
+                target=args.target,
+                count=args.count,
+                output=args.output,
+                provider=args.provider,
             )
         if args.command == "validate-report":
             return validate_report(args.path)

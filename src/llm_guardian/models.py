@@ -121,6 +121,50 @@ class AttackScenarioLibrary(StrictBaseModel):
         return self
 
 
+class ScenarioGenerationRequest(StrictBaseModel):
+    target_name: str
+    target_profile_summary: str
+    count: int = Field(default=2, ge=1)
+
+    @field_validator("target_name", "target_profile_summary")
+    @classmethod
+    def validate_non_empty_generation_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class ScenarioGenerationResult(StrictBaseModel):
+    raw_output: str
+    parsed_scenarios: list[AttackScenario] = Field(default_factory=list)
+    accepted_scenarios: list[AttackScenario] = Field(default_factory=list)
+    rejected_scenarios: list[dict[str, Any]] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+
+    @field_validator("raw_output")
+    @classmethod
+    def validate_raw_output(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class GeneratedScenarioBatch(StrictBaseModel):
+    target_name: str
+    target_profile_summary: str
+    generated_scenarios: list[AttackScenario] = Field(default_factory=list)
+    provider: str
+    model: str
+    generation_notes: str = ""
+
+    @field_validator("target_name", "target_profile_summary", "provider", "model")
+    @classmethod
+    def validate_non_empty_batch_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
 class ScenarioRunResult(StrictBaseModel):
     """Raw execution record for one attack scenario against a local target module."""
 
@@ -163,6 +207,9 @@ class AgentPlan(StrictBaseModel):
     target_name: str
     scenario_count: int = Field(ge=0)
     selected_scenario_ids: list[str] = Field(default_factory=list)
+    scenario_source: str | None = None
+    generated_scenario_count: int | None = None
+    scenario_provider: str | None = None
     rationale: str
     execution_strategy: str
 
@@ -170,6 +217,15 @@ class AgentPlan(StrictBaseModel):
     @classmethod
     def validate_non_empty_plan_text(cls, value: str) -> str:
         if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("scenario_source", "scenario_provider")
+    @classmethod
+    def validate_optional_plan_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
             raise ValueError("must be a non-empty string")
         return value
 

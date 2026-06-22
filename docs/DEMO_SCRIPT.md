@@ -23,6 +23,16 @@ streamlit run streamlit_app.py
 This UI runs the same `SecurityScanAgent` workflow as the CLI and displays the same
 agent plan, trace, adaptive probes, trajectory JSON, and Markdown report.
 
+## Optional Generated Scenario Demo
+After the stable deterministic scan, optionally show the scenario generator:
+
+```bash
+python -m llm_guardian.cli generate-scenarios --target demo-vulnerable-rag --count 2 --output data/generated_attack_scenarios.yaml --provider fake
+python -m llm_guardian.cli agent-scan --target demo-vulnerable-rag --scenario-file data/generated_attack_scenarios.yaml --output-dir reports/generated_scan
+```
+
+This is a secondary demo step. The main demo should stay focused on the stable deterministic `SecurityScanAgent` run.
+
 ## Expected Output
 The stable console summary is:
 

@@ -336,19 +336,32 @@ class SecurityScanAgent:
 
     _DEMO_TARGET_NAME = "demo-vulnerable-rag"
 
-    def run(self, target_name: str, output_dir: Path) -> SecurityScanResult:
-        scenarios = self._load_scenarios()
+    def run(
+        self,
+        target_name: str,
+        output_dir: Path,
+        scenario_file: Path | None = None,
+        scenario_provider: str | None = None,
+    ) -> SecurityScanResult:
+        resolved_scenario_file = Path(scenario_file) if scenario_file is not None else None
+        scenarios = self._load_scenarios(resolved_scenario_file)
         agent_trace: list[AgentTraceStep] = []
         next_step = 1
-        agent_plan = self._build_agent_plan(target_name=target_name, scenarios=scenarios)
+        agent_plan = self._build_agent_plan(
+            target_name=target_name,
+            scenarios=scenarios,
+            scenario_file=resolved_scenario_file,
+            scenario_provider=scenario_provider,
+        )
+        scenario_source_path = resolved_scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH
         agent_trace.append(
             AgentTraceStep(
                 step=next_step,
                 phase="plan",
-                action="Selected deterministic scenarios from the local YAML attack library.",
+                action="Selected deterministic scenarios from the local YAML scenario library.",
                 observation=(
                     f"Loaded {agent_plan.scenario_count} scenarios from "
-                    f"{DEFAULT_ATTACK_SCENARIOS_PATH.name}."
+                    f"{scenario_source_path.name}."
                 ),
                 decision="Execute the selected scenarios in fixed YAML order.",
                 evidence=", ".join(agent_plan.selected_scenario_ids),
@@ -416,7 +429,12 @@ class SecurityScanAgent:
         scan_result = SecurityScanResult(
             scan_id=self._build_scan_id(),
             target_name=target_name,
-            target_profile=self._build_target_profile(target_name),
+            target_profile=self._build_target_profile(
+                target_name,
+                scenario_file=resolved_scenario_file,
+                scenario_provider=scenario_provider,
+                generated_scenario_count=agent_plan.generated_scenario_count,
+            ),
             agent_plan=agent_plan,
             agent_trace=agent_trace,
             scenario_results=scenario_results,
@@ -438,8 +456,8 @@ class SecurityScanAgent:
         self._write_outputs(scan_result=scan_result, output_dir=output_dir)
         return scan_result
 
-    def _load_scenarios(self):
-        return load_attack_scenarios(DEFAULT_ATTACK_SCENARIOS_PATH)
+    def _load_scenarios(self, scenario_file: Path | None = None):
+        return load_attack_scenarios(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH)
 
     def _resolve_target(self, target_name: str):
         if target_name != self._DEMO_TARGET_NAME:
@@ -468,22 +486,47 @@ class SecurityScanAgent:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         return f"demo-scan-{timestamp}"
 
-    def _build_target_profile(self, target_name: str) -> dict[str, str | bool]:
-        return {
+    def _build_target_profile(
+        self,
+        target_name: str,
+        *,
+        scenario_file: Path | None = None,
+        scenario_provider: str | None = None,
+        generated_scenario_count: int | None = None,
+    ) -> dict[str, str | bool | int]:
+        profile: dict[str, str | bool | int] = {
             "target_name": target_name,
             "target_type": "local_demo_rag_module",
-            "scenario_source": str(DEFAULT_ATTACK_SCENARIOS_PATH),
+            "scenario_source": str(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH),
             "authorization_scope": "local_demo_only",
             "offline_only": True,
         }
+        if scenario_provider is not None:
+            profile["scenario_provider"] = scenario_provider
+        if generated_scenario_count is not None:
+            profile["generated_scenario_count"] = generated_scenario_count
+        return profile
 
     @staticmethod
-    def _build_agent_plan(*, target_name: str, scenarios) -> AgentPlan:
+    def _build_agent_plan(
+        *,
+        target_name: str,
+        scenarios,
+        scenario_file: Path | None = None,
+        scenario_provider: str | None = None,
+    ) -> AgentPlan:
         selected_scenario_ids = [scenario.id for scenario in scenarios]
+        resolved_scenario_source = str(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH)
+        generated_scenario_count = (
+            len([scenario for scenario in scenarios if scenario.id.startswith("generated-")]) or None
+        )
         return AgentPlan(
             target_name=target_name,
             scenario_count=len(selected_scenario_ids),
             selected_scenario_ids=selected_scenario_ids,
+            scenario_source=resolved_scenario_source,
+            generated_scenario_count=generated_scenario_count,
+            scenario_provider=scenario_provider,
             rationale=(
                 "Run every deterministic demo scenario to measure prompt-injection, "
                 "tool-use, secret-handling, and benign-response behavior in one stable scan."

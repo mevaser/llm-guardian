@@ -6,6 +6,11 @@ import json
 from pathlib import Path
 
 from llm_guardian.models import SecurityScanResult, Severity
+from llm_guardian.scenario_generation import (
+    FakeScenarioLLMProvider,
+    generate_attack_scenarios,
+    write_generated_scenarios_yaml,
+)
 from llm_guardian.security_agent.agent import SecurityScanAgent
 
 try:
@@ -18,13 +23,50 @@ except ImportError as exc:  # pragma: no cover - exercised by environment smoke 
 
 DEFAULT_TARGET = "demo-vulnerable-rag"
 DEFAULT_OUTPUT_DIR = Path("reports") / "streamlit_scan"
+DEFAULT_GENERATED_SCENARIOS_PATH = (
+    Path("reports") / "streamlit_generated" / "generated_attack_scenarios.yaml"
+)
 
 
-def run_streamlit_scan(target_name: str, output_dir: Path) -> SecurityScanResult:
+def run_streamlit_scenario_generation(
+    target_name: str,
+    count: int,
+    provider_name: str,
+    output_path: Path,
+):
+    """Generate optional attack scenarios for the Streamlit demo."""
+
+    if provider_name != "fake":
+        raise ValueError(f"Unsupported scenario provider '{provider_name}'.")
+
+    result = generate_attack_scenarios(
+        target_name=target_name,
+        target_profile_summary=(
+            "Local intentionally vulnerable demo target with deterministic grading and offline execution."
+        ),
+        provider=FakeScenarioLLMProvider(),
+        count=count,
+    )
+    write_generated_scenarios_yaml(result.accepted_scenarios, output_path)
+    return result
+
+
+def run_streamlit_scan(
+    target_name: str,
+    output_dir: Path,
+    scenario_file: Path | None = None,
+) -> SecurityScanResult:
     """Run the same SecurityScanAgent workflow used by the CLI."""
 
     agent = SecurityScanAgent()
-    return agent.run(target_name=target_name, output_dir=output_dir)
+    if scenario_file is None:
+        return agent.run(target_name=target_name, output_dir=output_dir)
+    return agent.run(
+        target_name=target_name,
+        output_dir=output_dir,
+        scenario_file=scenario_file,
+        scenario_provider="fake",
+    )
 
 
 def _build_summary_metrics(scan_result: SecurityScanResult) -> dict[str, int | str]:
@@ -127,17 +169,96 @@ def main() -> None:
         "trace, findings, adaptive probes, trajectory JSON, and Markdown report."
     )
 
-    selected_target = st.selectbox("Target", options=[DEFAULT_TARGET], index=0)
-    output_dir_input = st.text_input("Output directory", value=str(DEFAULT_OUTPUT_DIR))
+    st.session_state.setdefault("generated_scenarios_result", None)
+    st.session_state.setdefault("latest_streamlit_scan_result", None)
+    st.session_state.setdefault("latest_streamlit_trajectory_payload", None)
+    st.session_state.setdefault("latest_streamlit_report_markdown", None)
 
-    if st.button("Run Security Scan", type="primary"):
-        output_dir = Path(output_dir_input)
-        with st.spinner("Running SecurityScanAgent..."):
-            scan_result = run_streamlit_scan(
-                target_name=selected_target,
-                output_dir=output_dir,
+    generator_tab, scan_tab = st.tabs(["Scenario Generator", "Security Scan"])
+
+    with generator_tab:
+        generator_target = st.selectbox("Target", options=[DEFAULT_TARGET], index=0, key="generator_target")
+        generator_columns = st.columns(3)
+        with generator_columns[0]:
+            scenario_count = int(
+                st.number_input("Scenario count", min_value=1, value=2, step=1, key="scenario_count")
             )
-            trajectory_payload, report_markdown = _read_output_artifacts(output_dir)
+        with generator_columns[1]:
+            provider_name = st.selectbox("Provider", options=["fake"], index=0, key="scenario_provider")
+        with generator_columns[2]:
+            generated_output_path = st.text_input(
+                "Generated scenario file",
+                value=str(DEFAULT_GENERATED_SCENARIOS_PATH),
+                key="generated_output_path",
+            )
+
+        if st.button("Generate Scenarios", type="primary"):
+            with st.spinner("Generating optional attack scenarios..."):
+                result = run_streamlit_scenario_generation(
+                    target_name=generator_target,
+                    count=scenario_count,
+                    provider_name=provider_name,
+                    output_path=Path(generated_output_path),
+                )
+            st.session_state["generated_scenarios_result"] = result
+            st.success(f"Saved {len(result.accepted_scenarios)} scenarios to {generated_output_path}")
+
+        generated_result = st.session_state["generated_scenarios_result"]
+        if generated_result is not None:
+            st.subheader("Accepted Scenarios")
+            st.dataframe(
+                [scenario.model_dump(mode="python") for scenario in generated_result.accepted_scenarios],
+                use_container_width=True,
+                hide_index=True,
+            )
+            if generated_result.rejected_scenarios:
+                st.subheader("Rejected Scenarios")
+                st.dataframe(
+                    generated_result.rejected_scenarios,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            if generated_result.validation_errors:
+                st.subheader("Validation Errors")
+                for error in generated_result.validation_errors:
+                    st.write(f"- {error}")
+
+    with scan_tab:
+        selected_target = st.selectbox("Target", options=[DEFAULT_TARGET], index=0, key="scan_target")
+        output_dir_input = st.text_input("Output directory", value=str(DEFAULT_OUTPUT_DIR), key="scan_output_dir")
+        scenario_source_mode = st.radio(
+            "Scenario source",
+            options=("use default scenarios", "use generated scenarios if available"),
+            index=0,
+            key="scenario_source_mode",
+        )
+
+        if st.button("Run Security Scan", type="primary", key="run_scan"):
+            output_dir = Path(output_dir_input)
+            scenario_file = None
+            if scenario_source_mode == "use generated scenarios if available":
+                candidate_path = Path(st.session_state.get("generated_output_path", str(DEFAULT_GENERATED_SCENARIOS_PATH)))
+                if candidate_path.exists():
+                    scenario_file = candidate_path
+
+            with st.spinner("Running SecurityScanAgent..."):
+                scan_result = run_streamlit_scan(
+                    target_name=selected_target,
+                    output_dir=output_dir,
+                    scenario_file=scenario_file,
+                )
+                trajectory_payload, report_markdown = _read_output_artifacts(output_dir)
+
+            st.session_state["latest_streamlit_scan_result"] = scan_result
+            st.session_state["latest_streamlit_trajectory_payload"] = trajectory_payload
+            st.session_state["latest_streamlit_report_markdown"] = report_markdown
+
+        scan_result = st.session_state["latest_streamlit_scan_result"]
+        trajectory_payload = st.session_state["latest_streamlit_trajectory_payload"]
+        report_markdown = st.session_state["latest_streamlit_report_markdown"]
+        if scan_result is None or trajectory_payload is None or report_markdown is None:
+            st.info("Run a scan to view the plan, trace, findings, and generated artifacts.")
+            return
 
         summary_metrics = _build_summary_metrics(scan_result)
         metric_columns = st.columns(7)
@@ -173,6 +294,13 @@ def main() -> None:
                     "**selected_scenario_ids:** "
                     + ", ".join(scan_result.agent_plan.selected_scenario_ids)
                 )
+                st.write(f"**scenario_source:** {scan_result.agent_plan.scenario_source}")
+                if scan_result.agent_plan.generated_scenario_count is not None:
+                    st.write(
+                        f"**generated_scenario_count:** {scan_result.agent_plan.generated_scenario_count}"
+                    )
+                if scan_result.agent_plan.scenario_provider is not None:
+                    st.write(f"**scenario_provider:** {scan_result.agent_plan.scenario_provider}")
                 st.write(f"**rationale:** {scan_result.agent_plan.rationale}")
                 st.write(
                     f"**execution_strategy:** {scan_result.agent_plan.execution_strategy}"

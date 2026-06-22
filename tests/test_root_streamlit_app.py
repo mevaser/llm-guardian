@@ -89,3 +89,24 @@ def test_run_streamlit_scan_returns_security_scan_result_and_writes_artifacts(tm
     assert isinstance(result, SecurityScanResult)
     assert (output_dir / "scan_report.md").exists()
     assert (output_dir / "trajectory.json").exists()
+
+
+def test_run_streamlit_scenario_generation_uses_fake_provider_and_writes_yaml(
+    root_streamlit_app_module,
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "generated_attack_scenarios.yaml"
+
+    result = root_streamlit_app_module.run_streamlit_scenario_generation(
+        target_name="demo-vulnerable-rag",
+        count=2,
+        provider_name="fake",
+        output_path=output_path,
+    )
+
+    assert len(result.accepted_scenarios) == 2
+    assert result.rejected_scenarios == []
+    assert output_path.exists()
+    output_text = output_path.read_text(encoding="utf-8")
+    assert "scenarios:" in output_text
+    assert "generated-" in output_text
