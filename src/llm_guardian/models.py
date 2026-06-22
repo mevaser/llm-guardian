@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -134,6 +134,24 @@ class ScenarioRunResult(StrictBaseModel):
     @field_validator("scenario_id", "prompt", "target_response")
     @classmethod
     def validate_non_empty_run_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+
+class SecurityFinding(StrictBaseModel):
+    """Deterministic grading output for one scenario run."""
+
+    scenario_id: str
+    category: str
+    verdict: Literal["pass", "fail"]
+    severity: Severity
+    reason: str
+    evidence: str
+
+    @field_validator("scenario_id", "category", "reason", "evidence")
+    @classmethod
+    def validate_non_empty_finding_text(cls, value: str) -> str:
         if not value or not value.strip():
             raise ValueError("must be a non-empty string")
         return value
