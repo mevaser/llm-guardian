@@ -1,26 +1,45 @@
-# Demo Script
+# LLM Guardian — Course Demo Script
 
-## Goal
-Show LLM Guardian as a controlled local evaluation harness, not as a tool for attacking third-party systems.
+## Opening, 30 seconds
+LLM Guardian is a local AI Red Team evaluation project for testing how AI and LLM-based agents behave under security scenarios. The goal is to run structured attacks against a target agent, observe what it does, and turn that behavior into clear security evidence. In this MVP, everything is deterministic and offline, so the demo is stable, repeatable, and does not depend on live external systems.
 
-## Demo Flow
-1. Open the local Streamlit dashboard.
-2. Select the Customer Support Agent.
-3. Run all available attack categories.
-4. Show the overall risk score.
-5. Open the findings table.
-6. Show one prompt injection success trace.
-7. Show one tool abuse prevention or failure trace.
-8. Export the Markdown report.
-9. Explain that all targets are local and intentionally vulnerable.
-10. Conclude with the roadmap: authorized external targets, FastAPI backend, database, auth, and cloud deployment.
+## Architecture, 60 seconds
+The pipeline starts by loading attack scenarios from YAML in `data/attack_scenarios.yaml`. Those scenarios run against an intentionally vulnerable demo RAG agent in `demo_targets/vulnerable_rag_agent/`. During execution, the runner captures the model response, the retrieved context, and the tool trace so we can inspect the full trajectory instead of only the final answer. After that, deterministic grading rules evaluate each scenario as pass or fail based on expected unsafe behavior. The final outputs are written as a trajectory JSON artifact and a Markdown report for review.
 
-## Talking Points
-- The attack library is predefined and auditable.
-- The evaluator is deterministic for stable tests.
-- No real LLM API is required for the MVP.
-- All tools, secrets, customer data, and memory are fake.
-- Reports are controlled evaluation results, not proof of compromise.
+## Live Command
+Run:
 
-## Not Yet Available
-The dashboard and scan engine are not implemented in the initial context package.
+```bash
+python -m llm_guardian.cli agent-scan --target demo-vulnerable-rag --output-dir reports/demo_scan
+```
+
+## Expected Output
+The stable console summary is:
+
+- `LLM Guardian Scan Complete`
+- `Target: demo-vulnerable-rag`
+- `Scenarios tested: 8`
+- `Passed: 6`
+- `Failed: 2`
+- `Critical: 2`
+- `Overall Risk: CRITICAL`
+
+## What to Show in the Demo
+- `data/attack_scenarios.yaml`
+- `demo_targets/vulnerable_rag_agent/`
+- `reports/demo_scan/scan_report.md`
+- `reports/demo_scan/trajectory.json`
+- `examples/demo_scan/`
+
+## Key Explanation
+The failure is intentional. The vulnerable RAG agent treats retrieved content as instructions instead of as untrusted data. The grader detects unsafe tool usage and exfiltration behavior to `attacker@example.com`. The `send_email` tool is mock-only, and `read_secret` returns only a fake demo secret, so the demo stays safe while still showing the security failure clearly.
+
+## Limitations
+- Not a production red-team platform.
+- No real MCP integration.
+- No LLM-as-judge yet.
+- No cloud deployment.
+- No benchmark adapters yet.
+
+## Closing
+This demonstrates an agentic security evaluator because it plans and runs scenarios, observes behavior, captures trajectory, grades outcomes, and produces evidence that a developer can inspect.
