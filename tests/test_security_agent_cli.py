@@ -550,6 +550,39 @@ def test_generate_scenarios_command_writes_yaml(tmp_path: Path) -> None:
     assert "generated-" in output_text
 
 
+def test_generate_scenarios_command_with_groq_missing_key_fails_cleanly(tmp_path: Path) -> None:
+    output_path = tmp_path / "generated_attack_scenarios.yaml"
+    previous_value = os.environ.pop("GROQ_API_KEY", None)
+
+    try:
+        result = run_cli(
+            "generate-scenarios",
+            "--target",
+            "demo-vulnerable-rag",
+            "--count",
+            "2",
+            "--output",
+            str(output_path),
+            "--provider",
+            "groq",
+        )
+    finally:
+        if previous_value is not None:
+            os.environ["GROQ_API_KEY"] = previous_value
+
+    assert result.returncode == 1
+    assert "GROQ_API_KEY is required for provider=groq" in result.stderr
+
+
+def test_generate_scenarios_parser_accepts_groq_provider_options() -> None:
+    result = run_cli("generate-scenarios", "--help")
+
+    assert result.returncode == 0
+    assert "--provider {fake,groq}" in result.stdout
+    assert "--model MODEL" in result.stdout
+    assert "--base-url BASE_URL" in result.stdout
+
+
 def test_agent_scan_demo_vulnerable_rag_accepts_generated_scenario_file(tmp_path: Path) -> None:
     scenario_path = tmp_path / "generated_attack_scenarios.yaml"
     generate_result = run_cli(

@@ -110,3 +110,17 @@ def test_run_streamlit_scenario_generation_uses_fake_provider_and_writes_yaml(
     output_text = output_path.read_text(encoding="utf-8")
     assert "scenarios:" in output_text
     assert "generated-" in output_text
+
+
+def test_run_streamlit_scenario_generation_requires_groq_key(
+    root_streamlit_app_module,
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="GROQ_API_KEY is required for provider=groq"):
+        root_streamlit_app_module.run_streamlit_scenario_generation(
+            target_name="demo-vulnerable-rag",
+            count=2,
+            provider_name="groq",
+            output_path=tmp_path / "generated_attack_scenarios.yaml",
+            api_key="",
+        )

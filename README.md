@@ -39,12 +39,27 @@ Overall Risk: CRITICAL
 ## Optional LLM-assisted scenario generation
 The stable demo scan stays unchanged by default. Optional scenario generation is available as a separate offline-first workflow that produces extra YAML scenarios and then routes them back through the same deterministic grading pipeline.
 
-The included `fake` provider requires no API key, performs no network calls, and is intended for tests and local demos. A real provider can be added later behind the same interface if the project gains dependency support.
+The included `fake` provider requires no API key, performs no network calls, and is intended for tests and local demos.
 
 Generate optional scenarios:
 
 ```powershell
 python -m llm_guardian.cli generate-scenarios --target demo-vulnerable-rag --count 2 --output data/generated_attack_scenarios.yaml --provider fake
+```
+
+## Groq provider
+`fake` remains the default for offline deterministic tests and demos. `groq` is the first real cloud LLM provider for optional scenario generation only; it does not change deterministic execution or grading after scenario generation finishes.
+
+Set the API key for the current PowerShell session:
+
+```powershell
+$env:GROQ_API_KEY="..."
+```
+
+Generate optional scenarios with Groq:
+
+```powershell
+python -m llm_guardian.cli generate-scenarios --target demo-vulnerable-rag --count 4 --output data/generated_attack_scenarios.yaml --provider groq --model llama-3.3-70b-versatile
 ```
 
 Run the deterministic scan with the generated scenario file:
@@ -63,7 +78,7 @@ streamlit run streamlit_app.py
 The Streamlit UI uses the same `SecurityScanAgent` workflow as the CLI. It does not
 duplicate scan logic; it runs the agent, then displays the generated plan, trace,
 findings, adaptive probes, trajectory JSON, and Markdown report. It also includes an
-optional Scenario Generator tab backed by the same fake provider and generation service.
+optional Scenario Generator tab backed by the same generation service, with `fake` for offline mode and optional `groq` for cloud-backed scenario generation.
 
 ## Output files
 The demo command writes:

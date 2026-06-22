@@ -8,6 +8,8 @@ from pathlib import Path
 from llm_guardian.models import SecurityScanResult, Severity
 from llm_guardian.scenario_generation import (
     FakeScenarioLLMProvider,
+    GroqScenarioLLMProvider,
+    ProviderConfigurationError,
     generate_attack_scenarios,
     write_generated_scenarios_yaml,
 )
@@ -33,10 +35,21 @@ def run_streamlit_scenario_generation(
     count: int,
     provider_name: str,
     output_path: Path,
+    api_key: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ):
     """Generate optional attack scenarios for the Streamlit demo."""
 
-    if provider_name != "fake":
+    if provider_name == "fake":
+        provider = FakeScenarioLLMProvider()
+    elif provider_name == "groq":
+        provider = GroqScenarioLLMProvider(
+            api_key=api_key,
+            model=model or "llama-3.3-70b-versatile",
+            base_url=base_url or "https://api.groq.com/openai/v1",
+        )
+    else:
         raise ValueError(f"Unsupported scenario provider '{provider_name}'.")
 
     result = generate_attack_scenarios(
@@ -44,7 +57,7 @@ def run_streamlit_scenario_generation(
         target_profile_summary=(
             "Local intentionally vulnerable demo target with deterministic grading and offline execution."
         ),
-        provider=FakeScenarioLLMProvider(),
+        provider=provider,
         count=count,
     )
     write_generated_scenarios_yaml(result.accepted_scenarios, output_path)
@@ -184,24 +197,51 @@ def main() -> None:
                 st.number_input("Scenario count", min_value=1, value=2, step=1, key="scenario_count")
             )
         with generator_columns[1]:
-            provider_name = st.selectbox("Provider", options=["fake"], index=0, key="scenario_provider")
+            provider_name = st.selectbox(
+                "Provider",
+                options=["fake", "groq"],
+                index=0,
+                key="scenario_provider",
+            )
         with generator_columns[2]:
             generated_output_path = st.text_input(
                 "Generated scenario file",
                 value=str(DEFAULT_GENERATED_SCENARIOS_PATH),
                 key="generated_output_path",
             )
+        groq_api_key = ""
+        groq_model = "llama-3.3-70b-versatile"
+        groq_base_url = "https://api.groq.com/openai/v1"
+        if provider_name == "groq":
+            st.caption("API key is used only for this run and is not saved.")
+            groq_api_key = st.text_input("Groq API key", type="password", key="groq_api_key")
+            groq_model = st.text_input(
+                "Groq model",
+                value="llama-3.3-70b-versatile",
+                key="groq_model",
+            )
+            groq_base_url = st.text_input(
+                "Groq base URL",
+                value="https://api.groq.com/openai/v1",
+                key="groq_base_url",
+            )
 
         if st.button("Generate Scenarios", type="primary"):
-            with st.spinner("Generating optional attack scenarios..."):
-                result = run_streamlit_scenario_generation(
-                    target_name=generator_target,
-                    count=scenario_count,
-                    provider_name=provider_name,
-                    output_path=Path(generated_output_path),
-                )
-            st.session_state["generated_scenarios_result"] = result
-            st.success(f"Saved {len(result.accepted_scenarios)} scenarios to {generated_output_path}")
+            try:
+                with st.spinner("Generating optional attack scenarios..."):
+                    result = run_streamlit_scenario_generation(
+                        target_name=generator_target,
+                        count=scenario_count,
+                        provider_name=provider_name,
+                        output_path=Path(generated_output_path),
+                        api_key=groq_api_key,
+                        model=groq_model,
+                        base_url=groq_base_url,
+                    )
+                st.session_state["generated_scenarios_result"] = result
+                st.success(f"Saved {len(result.accepted_scenarios)} scenarios to {generated_output_path}")
+            except (ProviderConfigurationError, RuntimeError, ValueError) as exc:
+                st.error(str(exc))
 
         generated_result = st.session_state["generated_scenarios_result"]
         if generated_result is not None:

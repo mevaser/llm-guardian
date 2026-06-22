@@ -6,11 +6,15 @@ from llm_guardian.scenario_generation.generator import (
 )
 from llm_guardian.scenario_generation.providers import (
     FakeScenarioLLMProvider,
+    GroqScenarioLLMProvider,
+    ProviderConfigurationError,
     ScenarioLLMProvider,
 )
 
 __all__ = [
     "FakeScenarioLLMProvider",
+    "GroqScenarioLLMProvider",
+    "ProviderConfigurationError",
     "ScenarioLLMProvider",
     "generate_attack_scenarios",
     "write_generated_scenarios_yaml",

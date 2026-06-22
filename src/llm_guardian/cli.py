@@ -21,6 +21,8 @@ from llm_guardian.runner.scan_service import (
 )
 from llm_guardian.scenario_generation import (
     FakeScenarioLLMProvider,
+    GroqScenarioLLMProvider,
+    ProviderConfigurationError,
     generate_attack_scenarios,
     write_generated_scenarios_yaml,
 )
@@ -352,24 +354,38 @@ def generate_scenarios(
     count: int,
     output: Path,
     provider: str,
+    model: str | None,
+    base_url: str | None,
 ) -> int:
-    if provider != "fake":
-        print(f"Unsupported scenario provider '{provider}'.", file=sys.stderr)
+    try:
+        scenario_provider, provider_model = _build_scenario_provider(
+            provider=provider,
+            model=model,
+            base_url=base_url,
+        )
+    except (ProviderConfigurationError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
         return 1
 
-    result = generate_attack_scenarios(
-        target_name=target,
-        target_profile_summary=(
-            "Local intentionally vulnerable demo target with deterministic grading and offline execution."
-        ),
-        provider=FakeScenarioLLMProvider(),
-        count=count,
-    )
+    try:
+        result = generate_attack_scenarios(
+            target_name=target,
+            target_profile_summary=(
+                "Local intentionally vulnerable demo target with deterministic grading and offline execution."
+            ),
+            provider=scenario_provider,
+            count=count,
+        )
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
     write_generated_scenarios_yaml(result.accepted_scenarios, output)
 
     print("Scenario generation complete")
     print(f"Target: {target}")
     print(f"Provider: {provider}")
+    print(f"Model: {provider_model}")
     print(f"Requested: {count}")
     print(f"Accepted: {len(result.accepted_scenarios)}")
     print(f"Rejected: {len(result.rejected_scenarios)}")
@@ -519,7 +535,9 @@ def build_parser() -> argparse.ArgumentParser:
     generate_scenarios_parser.add_argument("--target", required=True)
     generate_scenarios_parser.add_argument("--count", type=_positive_int, default=2)
     generate_scenarios_parser.add_argument("--output", type=Path, required=True)
-    generate_scenarios_parser.add_argument("--provider", choices=("fake",), default="fake")
+    generate_scenarios_parser.add_argument("--provider", choices=("fake", "groq"), default="fake")
+    generate_scenarios_parser.add_argument("--model", default=None)
+    generate_scenarios_parser.add_argument("--base-url", default=None)
 
     report_parser = subparsers.add_parser("validate-report", help="Validate a structured report JSON file.")
     report_parser.add_argument("path", type=Path)
@@ -571,6 +589,8 @@ def main(argv: list[str] | None = None) -> int:
                 count=args.count,
                 output=args.output,
                 provider=args.provider,
+                model=args.model,
+                base_url=args.base_url,
             )
         if args.command == "validate-report":
             return validate_report(args.path)
@@ -586,6 +606,23 @@ def app() -> int:
     """Console script entry point."""
 
     return main()
+
+
+def _build_scenario_provider(
+    *,
+    provider: str,
+    model: str | None,
+    base_url: str | None,
+):
+    if provider == "fake":
+        return FakeScenarioLLMProvider(), "fake-deterministic"
+    if provider == "groq":
+        scenario_provider = GroqScenarioLLMProvider(
+            model=model or "llama-3.3-70b-versatile",
+            base_url=base_url or "https://api.groq.com/openai/v1",
+        )
+        return scenario_provider, scenario_provider.model
+    raise ValueError(f"Unsupported scenario provider '{provider}'.")
 
 
 if __name__ == "__main__":

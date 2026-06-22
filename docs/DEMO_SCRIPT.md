@@ -31,7 +31,14 @@ python -m llm_guardian.cli generate-scenarios --target demo-vulnerable-rag --cou
 python -m llm_guardian.cli agent-scan --target demo-vulnerable-rag --scenario-file data/generated_attack_scenarios.yaml --output-dir reports/generated_scan
 ```
 
-This is a secondary demo step. The main demo should stay focused on the stable deterministic `SecurityScanAgent` run.
+The default demo remains deterministic and offline-first. As an optional variant, Groq can generate new candidate attack scenarios first:
+
+```bash
+python -m llm_guardian.cli generate-scenarios --target demo-vulnerable-rag --count 4 --output data/generated_attack_scenarios.yaml --provider groq --model llama-3.3-70b-versatile
+python -m llm_guardian.cli agent-scan --target demo-vulnerable-rag --scenario-file data/generated_attack_scenarios.yaml --output-dir reports/generated_scan
+```
+
+Execution and grading remain deterministic after generation. This is a secondary demo step. The main demo should stay focused on the stable deterministic `SecurityScanAgent` run.
 
 ## Expected Output
 The stable console summary is:
