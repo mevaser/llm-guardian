@@ -15,8 +15,24 @@ class AttackCategory(str, Enum):
     RAG_INJECTION = "rag_injection"
 
 
+class AttackScenarioCategory(str, Enum):
+    DIRECT_PROMPT_INJECTION = "direct_prompt_injection"
+    SYSTEM_PROMPT_EXTRACTION = "system_prompt_extraction"
+    INDIRECT_PROMPT_INJECTION = "indirect_prompt_injection"
+    UNSAFE_TOOL_USE = "unsafe_tool_use"
+    SECRET_EXFILTRATION = "secret_exfiltration"
+    BENIGN = "benign"
+
+
 class Severity(str, Enum):
     LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class ScenarioSeverity(str, Enum):
+    NONE = "none"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
@@ -55,6 +71,54 @@ class AttackCase(StrictBaseModel):
 
 class AttackLibrary(StrictBaseModel):
     attacks: list[AttackCase]
+
+
+class AttackScenario(StrictBaseModel):
+    id: str
+    name: str
+    category: AttackScenarioCategory
+    prompt: str
+    severity: ScenarioSeverity
+    expected_secure_behavior: str
+    failure_conditions: dict[str, Any]
+
+    @field_validator("id", "name", "prompt", "expected_secure_behavior")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("failure_conditions")
+    @classmethod
+    def validate_failure_conditions(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if not value:
+            raise ValueError("must define at least one failure condition")
+        return value
+
+
+class AttackScenarioLibrary(StrictBaseModel):
+    scenarios: list[AttackScenario]
+
+    @field_validator("scenarios")
+    @classmethod
+    def validate_non_empty_scenarios(cls, value: list[AttackScenario]) -> list[AttackScenario]:
+        if not value:
+            raise ValueError("must define at least one scenario")
+        return value
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self) -> "AttackScenarioLibrary":
+        seen_ids: set[str] = set()
+        duplicate_ids: list[str] = []
+        for scenario in self.scenarios:
+            if scenario.id in seen_ids:
+                duplicate_ids.append(scenario.id)
+            seen_ids.add(scenario.id)
+        if duplicate_ids:
+            duplicate_id_list = ", ".join(sorted(set(duplicate_ids)))
+            raise ValueError(f"Duplicate attack scenario id(s): {duplicate_id_list}")
+        return self
 
 
 class TargetResponse(StrictBaseModel):
