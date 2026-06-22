@@ -157,6 +157,43 @@ class SecurityFinding(StrictBaseModel):
         return value
 
 
+class SecurityScanResult(StrictBaseModel):
+    """Structured scenario-scan result for deterministic trajectory export."""
+
+    scan_id: str
+    target_name: str
+    target_profile: dict[str, Any] = Field(default_factory=dict)
+    scenario_results: list[ScenarioRunResult] = Field(default_factory=list)
+    findings: list[SecurityFinding] = Field(default_factory=list)
+
+    @field_validator("scan_id", "target_name")
+    @classmethod
+    def validate_non_empty_scan_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @model_validator(mode="after")
+    def validate_scenarios_and_findings(self) -> "SecurityScanResult":
+        scenario_ids = [item.scenario_id for item in self.scenario_results]
+        if len(set(scenario_ids)) != len(scenario_ids):
+            raise ValueError("scenario_results must not contain duplicate scenario_id values")
+
+        known_scenario_ids = set(scenario_ids)
+        finding_ids = {item.scenario_id for item in self.findings}
+        missing_findings = known_scenario_ids.difference(finding_ids)
+        unknown_findings = finding_ids.difference(known_scenario_ids)
+
+        if missing_findings:
+            missing_list = ", ".join(sorted(missing_findings))
+            raise ValueError(f"findings missing scenario_id values: {missing_list}")
+        if unknown_findings:
+            unknown_list = ", ".join(sorted(unknown_findings))
+            raise ValueError(f"findings reference unknown scenario_id values: {unknown_list}")
+
+        return self
+
+
 class TargetResponse(StrictBaseModel):
     """Deterministic target output plus optional operational trace data."""
 
