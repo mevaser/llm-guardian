@@ -15,7 +15,7 @@ Before editing any file, always run and inspect:
 
 Do not edit anything unless:
 - The current repository is `llm-guardian`.
-- The current branch is `feature/*`.
+- The current branch is `feature/*` or `fix/*`.
 
 If either check fails:
 - Stop immediately.
@@ -49,7 +49,7 @@ Run before every completion:
 ## Git Workflow
 - Codex may edit files for the current task.
 - Codex must never edit files outside `llm-guardian`.
-- Codex must work only on a `feature/*` branch and never directly on `main`.
+- Codex must work only on a `feature/*` or `fix/*` branch and never directly on `main`.
 - Codex must run `python scripts/verify.py` before every commit.
 - Codex must run `git diff --check` before every commit.
 - Codex must inspect `git status --short` before every commit.
@@ -57,7 +57,7 @@ Run before every completion:
 - Codex may create local commits when explicitly instructed.
 - Codex must not push unless explicitly instructed by the user.
 - Codex must not push to `main`.
-- Codex may push only to the current `feature/*` branch, and only when explicitly instructed.
+- Codex may push only to the current `feature/*` or `fix/*` branch, and only when explicitly instructed.
 - Codex must never use `git push --force`.
 
 ## Definition of Done
