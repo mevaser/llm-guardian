@@ -18,7 +18,12 @@ from llm_guardian.security_agent.models import (
     Trajectory,
     Verdict,
 )
-from llm_guardian.security_agent.mutator import PromptMutator
+from llm_guardian.security_agent.mutator import (
+    LLMAssistedPromptMutator,
+    LLMClient,
+    PromptMutator,
+    StaticFakeLLMClient,
+)
 from llm_guardian.security_agent.planner import AttackPlanner
 from llm_guardian.security_agent.reporting import (
     SecurityAgentJsonReportBuilder,
@@ -40,6 +45,8 @@ __all__ = [
     "AttackPlan",
     "AttackPlanner",
     "LocalTargetAdapter",
+    "LLMAssistedPromptMutator",
+    "LLMClient",
     "Observation",
     "PromptMutation",
     "PromptMutator",
@@ -49,6 +56,7 @@ __all__ = [
     "SecurityAgentJsonReportBuilder",
     "SecurityAgentMarkdownReportBuilder",
     "SecurityTestObjective",
+    "StaticFakeLLMClient",
     "TargetAdapter",
     "TargetProfileLoadError",
     "TargetProfile",

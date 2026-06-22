@@ -242,6 +242,111 @@ def test_agent_scan_explicit_mutation_budget_overrides_yaml_profile() -> None:
     assert all(attempt["attempt_index"] == 1 for attempt in payload["attempt_history"])
 
 
+def test_agent_scan_defaults_to_deterministic_mutation_strategy_mode() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "mutation_challenge_tool_agent",
+        "--category",
+        "tool_abuse",
+        "--max-total-attempts",
+        "2",
+        "--max-attempts-per-attack",
+        "2",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert "mutation_strategy_mode" not in payload["attack_campaign"]["retry_policy"]
+    assert "llm_validation_status" not in payload["prompt_mutations"][0]
+    assert "fallback_used" not in payload["prompt_mutations"][0]
+
+
+def test_agent_scan_llm_assisted_fake_provider_adds_structured_mutation_metadata() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "mutation_challenge_tool_agent",
+        "--category",
+        "tool_abuse",
+        "--max-total-attempts",
+        "10",
+        "--max-attempts-per-attack",
+        "2",
+        "--max-mutations-per-attack",
+        "1",
+        "--mutation-strategy-mode",
+        "llm-assisted",
+        "--llm-provider",
+        "fake",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["total_attempts"] == 10
+    assert payload["summary"]["successful_attempts"] == 5
+    assert payload["summary"]["failed_attempts"] == 5
+    assert payload["attack_campaign"]["retry_policy"]["mutation_strategy_mode"] == "llm-assisted"
+    assert payload["summary"]["mutation_strategies_used"] == ["indirect_framing"]
+    first_mutation = payload["prompt_mutations"][0]
+    assert first_mutation["llm_recommended_strategy"] == "indirect_framing"
+    assert first_mutation["llm_validation_status"] == "valid"
+    assert first_mutation["fallback_used"] is False
+    mutated_attempt = payload["attempt_history"][1]
+    assert mutated_attempt["llm_failure_analysis"]
+    assert mutated_attempt["llm_validation_status"] == "valid"
+    assert mutated_attempt["trajectory"]["mutation_lineage"]["llm_recommended_strategy"] == "indirect_framing"
+    assert mutated_attempt["observation"]["external_call_attempted"] is False
+
+
+def test_agent_scan_deterministic_mode_ignores_unimplemented_provider_selection() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "tool_agent",
+        "--category",
+        "tool_abuse",
+        "--max-total-attempts",
+        "2",
+        "--mutation-strategy-mode",
+        "deterministic",
+        "--llm-provider",
+        "ollama",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert "mutation_strategy_mode" not in payload["attack_campaign"]["retry_policy"]
+    assert payload["summary"]["mutation_strategies_used"] == []
+
+
+def test_agent_scan_llm_assisted_ollama_provider_fails_clearly() -> None:
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "mutation_challenge_tool_agent",
+        "--category",
+        "tool_abuse",
+        "--mutation-strategy-mode",
+        "llm-assisted",
+        "--llm-provider",
+        "ollama",
+        "--llm-model",
+        "qwen2.5:7b-instruct",
+        "--output-format",
+        "json",
+    )
+
+    assert result.returncode == 1
+    assert "Ollama LLM-assisted mutation is not implemented" in result.stderr
+
+
 def test_agent_scan_repeated_json_runs_remain_deterministic() -> None:
     first = run_cli(
         "agent-scan",

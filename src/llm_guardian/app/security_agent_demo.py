@@ -9,11 +9,13 @@ from llm_guardian.attacks.loader import load_attack_library
 from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH, DEFAULT_TARGET_PROFILES_PATH
 from llm_guardian.models import AttackCategory
 from llm_guardian.security_agent import (
+    LLMAssistedPromptMutator,
     SecurityAgent,
     SecurityAgentJsonReportBuilder,
     SecurityAgentMarkdownReportBuilder,
     SecurityAgentResult,
     SecurityTestObjective,
+    StaticFakeLLMClient,
 )
 from llm_guardian.security_agent.adapters import LocalTargetAdapter
 from llm_guardian.security_agent.target_profiles import (
@@ -46,6 +48,8 @@ def run_security_agent_demo_scan(
     max_total_attempts: int = DEFAULT_MAX_TOTAL_ATTEMPTS,
     max_attempts_per_attack: int = DEFAULT_MAX_ATTEMPTS_PER_ATTACK,
     max_mutations_per_attack: int | None = None,
+    mutation_strategy_mode: str = "deterministic",
+    llm_provider: str = "fake",
 ) -> SecurityAgentDemoData:
     """Run the local SecurityAgent demo flow and return render-ready data."""
 
@@ -66,7 +70,11 @@ def run_security_agent_demo_scan(
         stop_on_success=False,
     )
 
-    result = SecurityAgent(max_mutations_per_attack=effective_max_mutations_per_attack).run(
+    result = SecurityAgent(
+        max_mutations_per_attack=effective_max_mutations_per_attack,
+        mutation_strategy_mode=mutation_strategy_mode,
+        mutator=_build_mutator(mutation_strategy_mode=mutation_strategy_mode, llm_provider=llm_provider),
+    ).run(
         target_profile=target_profile,
         objective=objective,
         attacks=library.attacks,
@@ -110,6 +118,14 @@ def build_attempt_timeline_rows(payload: dict[str, Any]) -> list[dict[str, objec
             }
         )
     return rows
+
+
+def _build_mutator(*, mutation_strategy_mode: str, llm_provider: str):
+    if mutation_strategy_mode == "deterministic":
+        return None
+    if llm_provider == "fake":
+        return LLMAssistedPromptMutator(llm_client=StaticFakeLLMClient())
+    raise ValueError("Only the fake LLM provider is available in the Streamlit demo.")
 
 
 def build_security_agent_findings_rows(payload: dict[str, Any]) -> list[dict[str, object]]:

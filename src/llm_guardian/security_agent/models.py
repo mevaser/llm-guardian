@@ -215,6 +215,10 @@ class AttackAttempt(StrictBaseModel):
     mutation_strategy: str | None = None
     source_prompt: str | None = None
     mutation_reason_summary: str | None = None
+    llm_failure_analysis: str | None = None
+    llm_recommended_strategy: str | None = None
+    llm_validation_status: str | None = None
+    fallback_used: bool | None = None
     response: str | None = None
     trace: list[Any] = Field(default_factory=list)
     success: bool | None = None
@@ -230,7 +234,16 @@ class AttackAttempt(StrictBaseModel):
             raise ValueError("must be a non-empty string")
         return value
 
-    @field_validator("attempt_id", "mutation_strategy", "source_prompt", "mutation_reason_summary", "response")
+    @field_validator(
+        "attempt_id",
+        "mutation_strategy",
+        "source_prompt",
+        "mutation_reason_summary",
+        "llm_failure_analysis",
+        "llm_recommended_strategy",
+        "llm_validation_status",
+        "response",
+    )
     @classmethod
     def validate_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -287,6 +300,10 @@ class PromptMutation(StrictBaseModel):
     mutation_type: str
     reason_summary: str
     safety_flags: list[str] = Field(default_factory=list)
+    llm_failure_analysis: str | None = None
+    llm_recommended_strategy: str | None = None
+    llm_validation_status: str | None = None
+    fallback_used: bool | None = None
 
     @field_validator(
         "source_attack_id",
@@ -298,6 +315,15 @@ class PromptMutation(StrictBaseModel):
     @classmethod
     def validate_required_text(cls, value: str) -> str:
         if not value or not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @field_validator("llm_failure_analysis", "llm_recommended_strategy", "llm_validation_status")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.strip():
             raise ValueError("must be a non-empty string")
         return value
 

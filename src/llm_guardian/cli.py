@@ -17,10 +17,12 @@ from llm_guardian.runner.scan_service import (
     run_offline_scan,
 )
 from llm_guardian.security_agent import (
+    LLMAssistedPromptMutator,
     SecurityAgent,
     SecurityAgentJsonReportBuilder,
     SecurityAgentMarkdownReportBuilder,
     SecurityTestObjective,
+    StaticFakeLLMClient,
     TargetProfile,
 )
 from llm_guardian.security_agent.adapters import LocalTargetAdapter
@@ -147,6 +149,10 @@ def agent_scan(
     max_total_attempts: int,
     max_attempts_per_attack: int,
     max_mutations_per_attack: int | None,
+    mutation_strategy_mode: str,
+    llm_provider: str,
+    llm_model: str | None,
+    llm_timeout_seconds: int,
     output_format: str,
     output_file: Path | None,
     target_profile_path: Path,
@@ -177,8 +183,23 @@ def agent_scan(
         max_attempts_per_attack=max_attempts_per_attack,
         max_total_attempts=max_total_attempts,
     )
+    try:
+        mutator = _build_agent_scan_mutator(
+            mutation_strategy_mode=mutation_strategy_mode,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_timeout_seconds=llm_timeout_seconds,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
     library = _load_default_library()
-    result = SecurityAgent(max_mutations_per_attack=effective_max_mutations_per_attack).run(
+    result = SecurityAgent(
+        max_mutations_per_attack=effective_max_mutations_per_attack,
+        mutation_strategy_mode=mutation_strategy_mode,
+        mutator=mutator,
+    ).run(
         target_profile=target_profile,
         objective=objective,
         attacks=library.attacks,
@@ -201,6 +222,29 @@ def agent_scan(
 
     sys.stdout.write(rendered_output + "\n")
     return 0
+
+
+def _build_agent_scan_mutator(
+    *,
+    mutation_strategy_mode: str,
+    llm_provider: str,
+    llm_model: str | None,
+    llm_timeout_seconds: int,
+):
+    if mutation_strategy_mode == "deterministic":
+        return None
+
+    if llm_provider == "fake":
+        return LLMAssistedPromptMutator(llm_client=StaticFakeLLMClient())
+
+    if llm_provider == "ollama":
+        model_hint = f" model '{llm_model}'" if llm_model else ""
+        raise ValueError(
+            "Ollama LLM-assisted mutation is not implemented in this slice; "
+            f"no local request was made for{model_hint} with timeout {llm_timeout_seconds}s."
+        )
+
+    raise ValueError(f"Unsupported LLM provider '{llm_provider}'.")
 
 
 def list_attacks() -> int:
@@ -320,6 +364,14 @@ def build_parser() -> argparse.ArgumentParser:
     agent_scan_parser.add_argument("--max-total-attempts", type=_positive_int, default=5)
     agent_scan_parser.add_argument("--max-attempts-per-attack", type=_positive_int, default=1)
     agent_scan_parser.add_argument("--max-mutations-per-attack", type=int, default=None)
+    agent_scan_parser.add_argument(
+        "--mutation-strategy-mode",
+        choices=("deterministic", "llm-assisted"),
+        default="deterministic",
+    )
+    agent_scan_parser.add_argument("--llm-provider", choices=("fake", "ollama"), default="fake")
+    agent_scan_parser.add_argument("--llm-model", default=None)
+    agent_scan_parser.add_argument("--llm-timeout-seconds", type=_positive_int, default=30)
     agent_scan_parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
     agent_scan_parser.add_argument("--output-file", type=Path)
     agent_scan_parser.add_argument("--target-profile", type=Path, default=DEFAULT_TARGET_PROFILES_PATH)
@@ -358,6 +410,10 @@ def main(argv: list[str] | None = None) -> int:
                 max_total_attempts=args.max_total_attempts,
                 max_attempts_per_attack=args.max_attempts_per_attack,
                 max_mutations_per_attack=args.max_mutations_per_attack,
+                mutation_strategy_mode=args.mutation_strategy_mode,
+                llm_provider=args.llm_provider,
+                llm_model=args.llm_model,
+                llm_timeout_seconds=args.llm_timeout_seconds,
                 output_format=args.output_format,
                 output_file=args.output_file,
                 target_profile_path=args.target_profile,

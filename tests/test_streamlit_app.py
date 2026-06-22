@@ -105,6 +105,7 @@ def test_security_agent_demo_scan_uses_yaml_mutation_policy_by_default() -> None
 
     assert payload["attack_campaign"]["mutation_budget"] == 0
     assert payload["attack_campaign"]["retry_policy"]["max_mutations_per_attack"] == 0
+    assert "mutation_strategy_mode" not in payload["attack_campaign"]["retry_policy"]
     assert payload["prompt_mutations"] == []
 
 
@@ -116,4 +117,35 @@ def test_security_agent_demo_scan_explicit_override_beats_yaml_mutation_policy()
 
     assert payload["attack_campaign"]["mutation_budget"] == 0
     assert payload["attack_campaign"]["retry_policy"]["max_mutations_per_attack"] == 0
+    assert "mutation_strategy_mode" not in payload["attack_campaign"]["retry_policy"]
     assert payload["prompt_mutations"] == []
+
+
+def test_security_agent_demo_scan_supports_llm_assisted_fake_mode() -> None:
+    payload = run_security_agent_demo_scan(
+        mutation_strategy_mode="llm-assisted",
+        llm_provider="fake",
+    ).payload
+
+    assert payload["attack_campaign"]["retry_policy"]["mutation_strategy_mode"] == "llm-assisted"
+    assert payload["prompt_mutations"][0]["llm_validation_status"] == "valid"
+    assert payload["prompt_mutations"][0]["fallback_used"] is False
+    assert payload["attempt_history"][1]["llm_recommended_strategy"] == "indirect_framing"
+
+
+def test_security_agent_demo_scan_deterministic_mutation_payload_omits_null_llm_metadata() -> None:
+    payload = run_security_agent_demo_scan(
+        target_name="mutation_challenge_tool_agent",
+        max_total_attempts=2,
+        max_attempts_per_attack=2,
+        max_mutations_per_attack=1,
+    ).payload
+
+    assert "llm_failure_analysis" not in payload["attempt_history"][1]
+    assert "llm_recommended_strategy" not in payload["attempt_history"][1]
+    assert "llm_validation_status" not in payload["attempt_history"][1]
+    assert "fallback_used" not in payload["attempt_history"][1]
+    assert "llm_failure_analysis" not in payload["prompt_mutations"][0]
+    assert "llm_recommended_strategy" not in payload["prompt_mutations"][0]
+    assert "llm_validation_status" not in payload["prompt_mutations"][0]
+    assert "fallback_used" not in payload["prompt_mutations"][0]

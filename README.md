@@ -50,6 +50,14 @@ python -m llm_guardian.cli agent-scan --target rag_agent --category rag_injectio
 
 `agent-scan` resolves target execution contracts from `data/target_profiles.yaml` by target name. Use `--target-profile path/to/target_profiles.yaml` to run the same local flow with another validated profile file.
 
+Prompt mutation defaults to deterministic mode. To exercise the optional offline LLM-assisted mutator with the fake client:
+
+```bash
+python -m llm_guardian.cli agent-scan --target mutation_challenge_tool_agent --category tool_abuse --max-total-attempts 10 --max-attempts-per-attack 2 --max-mutations-per-attack 1 --mutation-strategy-mode llm-assisted --llm-provider fake --output-format markdown
+```
+
+The LLM-assisted path validates structured JSON mutation proposals and falls back to deterministic mutation if validation fails. Verdicts remain deterministic. `--llm-provider ollama` is reserved but not implemented in this slice, and no Ollama request is made.
+
 `scan` remains the baseline `ScanRunner` command. `agent-scan` is additive and uses `SecurityAgent` against approved local demo targets only.
 
 Run the Streamlit dashboard locally:
