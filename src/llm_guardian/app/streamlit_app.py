@@ -252,25 +252,53 @@ def _render_security_agent_demo_view(targets: list[str], category_options: list[
         )
 
     llm_provider = "fake"
+    llm_model = None
+    llm_timeout_seconds = 30
     if mutation_strategy_mode == "llm-assisted":
-        llm_provider = st.selectbox(
-            "LLM provider",
-            options=("fake",),
-            index=0,
-            key="security_agent_llm_provider",
-        )
+        provider_row = st.columns(3)
+        with provider_row[0]:
+            llm_provider = st.selectbox(
+                "LLM provider",
+                options=("fake", "ollama"),
+                index=0,
+                key="security_agent_llm_provider",
+            )
+        with provider_row[1]:
+            if llm_provider == "ollama":
+                llm_model = st.text_input(
+                    "Ollama model",
+                    value="",
+                    placeholder="qwen2.5:7b-instruct",
+                    key="security_agent_llm_model",
+                )
+        with provider_row[2]:
+            if llm_provider == "ollama":
+                llm_timeout_seconds = int(
+                    st.number_input(
+                        "LLM timeout (seconds)",
+                        min_value=1,
+                        value=30,
+                        step=1,
+                        key="security_agent_llm_timeout_seconds",
+                    )
+                )
 
     if st.button("Run Security Agent demo", type="primary", key="security_agent_run"):
         with st.spinner(f"Running {mutation_strategy_mode} SecurityAgent scan..."):
-            st.session_state["security_agent_demo_data"] = run_security_agent_demo_scan(
-                target_name=target_name,
-                categories=selected_categories or [DEFAULT_SECURITY_AGENT_CATEGORY],
-                max_total_attempts=int(max_total_attempts),
-                max_attempts_per_attack=int(max_attempts_per_attack),
-                max_mutations_per_attack=int(max_mutations_per_attack),
-                mutation_strategy_mode=mutation_strategy_mode,
-                llm_provider=llm_provider,
-            )
+            try:
+                st.session_state["security_agent_demo_data"] = run_security_agent_demo_scan(
+                    target_name=target_name,
+                    categories=selected_categories or [DEFAULT_SECURITY_AGENT_CATEGORY],
+                    max_total_attempts=int(max_total_attempts),
+                    max_attempts_per_attack=int(max_attempts_per_attack),
+                    max_mutations_per_attack=int(max_mutations_per_attack),
+                    mutation_strategy_mode=mutation_strategy_mode,
+                    llm_provider=llm_provider,
+                    llm_model=llm_model,
+                    llm_timeout_seconds=llm_timeout_seconds,
+                )
+            except ValueError as exc:
+                st.error(str(exc))
 
     demo_data = st.session_state.get("security_agent_demo_data")
     if demo_data is None:

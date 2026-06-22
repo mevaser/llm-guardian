@@ -15,6 +15,7 @@ from llm_guardian.security_agent import (
     SecurityAgentMarkdownReportBuilder,
     SecurityAgentResult,
     SecurityTestObjective,
+    OllamaLLMClient,
     StaticFakeLLMClient,
 )
 from llm_guardian.security_agent.adapters import LocalTargetAdapter
@@ -50,6 +51,8 @@ def run_security_agent_demo_scan(
     max_mutations_per_attack: int | None = None,
     mutation_strategy_mode: str = "deterministic",
     llm_provider: str = "fake",
+    llm_model: str | None = None,
+    llm_timeout_seconds: int = 30,
 ) -> SecurityAgentDemoData:
     """Run the local SecurityAgent demo flow and return render-ready data."""
 
@@ -73,7 +76,12 @@ def run_security_agent_demo_scan(
     result = SecurityAgent(
         max_mutations_per_attack=effective_max_mutations_per_attack,
         mutation_strategy_mode=mutation_strategy_mode,
-        mutator=_build_mutator(mutation_strategy_mode=mutation_strategy_mode, llm_provider=llm_provider),
+        mutator=_build_mutator(
+            mutation_strategy_mode=mutation_strategy_mode,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_timeout_seconds=llm_timeout_seconds,
+        ),
     ).run(
         target_profile=target_profile,
         objective=objective,
@@ -120,12 +128,24 @@ def build_attempt_timeline_rows(payload: dict[str, Any]) -> list[dict[str, objec
     return rows
 
 
-def _build_mutator(*, mutation_strategy_mode: str, llm_provider: str):
+def _build_mutator(
+    *,
+    mutation_strategy_mode: str,
+    llm_provider: str,
+    llm_model: str | None,
+    llm_timeout_seconds: int,
+):
     if mutation_strategy_mode == "deterministic":
         return None
     if llm_provider == "fake":
         return LLMAssistedPromptMutator(llm_client=StaticFakeLLMClient())
-    raise ValueError("Only the fake LLM provider is available in the Streamlit demo.")
+    if llm_provider == "ollama":
+        if llm_model is None or not llm_model.strip():
+            raise ValueError("Ollama LLM provider requires a model name.")
+        return LLMAssistedPromptMutator(
+            llm_client=OllamaLLMClient(model=llm_model, timeout_seconds=llm_timeout_seconds)
+        )
+    raise ValueError(f"Unsupported LLM provider '{llm_provider}'.")
 
 
 def build_security_agent_findings_rows(payload: dict[str, Any]) -> list[dict[str, object]]:

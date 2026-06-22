@@ -22,6 +22,7 @@ from llm_guardian.security_agent import (
     SecurityAgentJsonReportBuilder,
     SecurityAgentMarkdownReportBuilder,
     SecurityTestObjective,
+    OllamaLLMClient,
     StaticFakeLLMClient,
     TargetProfile,
 )
@@ -234,15 +235,22 @@ def _build_agent_scan_mutator(
     if mutation_strategy_mode == "deterministic":
         return None
 
+    llm_client = _build_llm_client(
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_timeout_seconds=llm_timeout_seconds,
+    )
+    return LLMAssistedPromptMutator(llm_client=llm_client)
+
+
+def _build_llm_client(*, llm_provider: str, llm_model: str | None, llm_timeout_seconds: int):
     if llm_provider == "fake":
-        return LLMAssistedPromptMutator(llm_client=StaticFakeLLMClient())
+        return StaticFakeLLMClient()
 
     if llm_provider == "ollama":
-        model_hint = f" model '{llm_model}'" if llm_model else ""
-        raise ValueError(
-            "Ollama LLM-assisted mutation is not implemented in this slice; "
-            f"no local request was made for{model_hint} with timeout {llm_timeout_seconds}s."
-        )
+        if llm_model is None or not llm_model.strip():
+            raise ValueError("Ollama LLM provider requires --llm-model.")
+        return OllamaLLMClient(model=llm_model, timeout_seconds=llm_timeout_seconds)
 
     raise ValueError(f"Unsupported LLM provider '{llm_provider}'.")
 
