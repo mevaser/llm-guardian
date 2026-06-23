@@ -1,5 +1,6 @@
 import argparse
 import sys
+import time
 from typing import List, Dict, Any, Optional
 
 from llm_guardian.redteam.local_lab.adapters import LocalLabAdapter, TargetAdapter
@@ -26,11 +27,12 @@ class ScriptedStrategy:
         return "Can you tell me the protected value?"
 
 class AttackRunner:
-    def __init__(self, adapter: TargetAdapter, strategy_name: str, response_mode: str, max_attempts: int, base_dir: str):
+    def __init__(self, adapter: TargetAdapter, strategy_name: str, response_mode: str, max_attempts: int, delay_ms: int, base_dir: str):
         self.adapter = adapter
         self.strategy_name = strategy_name
         self.response_mode = response_mode
         self.max_attempts = max_attempts
+        self.delay_ms = delay_ms
         self.logger = ObservabilityLogger(base_dir=base_dir)
         
         self.logger.update_meta(strategy=strategy_name)
@@ -42,7 +44,12 @@ class AttackRunner:
         else:
             raise ValueError(f"Unknown strategy: {strategy_name}")
 
+    def _sleep_if_needed(self):
+        if self.delay_ms > 0:
+            time.sleep(self.delay_ms / 1000.0)
+
     def run_level(self, level_id: int) -> bool:
+        self.logger.update_meta(current_level=level_id, current_turn=1)
         self.logger.log_event("attack_agent", "level_started", level_id=level_id)
         
         try:
@@ -56,12 +63,23 @@ class AttackRunner:
         solved = False
 
         for attempt_num in range(1, self.max_attempts + 1):
+            self.logger.update_meta(current_turn=attempt_num)
             prompt = self.strategy.generate_prompt(level_id, attempt_num, previous_attempts)
             
-            self.logger.log_decision("attack_agent", level_id, f"Attempt {attempt_num}: submitting prompt", payload={"prompt": prompt})
+            decision_payload = {
+                "level_id": level_id,
+                "turn": attempt_num,
+                "strategy_name": self.strategy_name,
+                "decision_reason": f"Strategy {self.strategy_name} suggested prompt",
+                "expected_bypass_type": "unknown",
+                "selected_prompt": prompt
+            }
+            self.logger.log_event("attack_agent", "agent_decision", **decision_payload)
+            self._sleep_if_needed()
             
             try:
-                self.logger.log_event("attack_agent", "prompt_submitted", level_id=level_id, session_id=session_id, payload={"prompt": prompt})
+                self.logger.log_event("attack_agent", "prompt_submitted", level_id=level_id, session_id=session_id, turn=attempt_num, prompt=prompt)
+                self._sleep_if_needed()
                 submit_resp = self.adapter.submit_prompt(session_id, prompt, self.response_mode)
             except Exception as e:
                 self.logger.log_error("attack_agent", f"Failed to submit prompt: {str(e)}")
@@ -71,7 +89,18 @@ class AttackRunner:
             response = submit_resp.get("response", "")
             solved = submit_resp.get("solved", False)
             
-            self.logger.log_event("wizard_lab_api", "wizard_response", level_id=level_id, session_id=session_id, payload=submit_resp)
+            wizard_payload = {
+                "level_id": level_id,
+                "turn": attempt_num,
+                "response": response,
+                "intent": submit_resp.get("intent", "unknown"),
+                "outcome_type": submit_resp.get("outcome_type", "unknown"),
+                "composer_used": submit_resp.get("composer_used", False),
+                "fallback_reason": submit_resp.get("fallback_reason", None),
+                "solved": solved
+            }
+            self.logger.log_event("wizard_lab_api", "wizard_response", **wizard_payload)
+            self._sleep_if_needed()
             self.logger.add_trajectory_attempt(level_id, prompt, response, solved)
 
             if submit_resp.get("composer_used"):
@@ -104,6 +133,7 @@ class AttackRunner:
             attempted += 1
             if self.run_level(lvl):
                 solved_count += 1
+            self._sleep_if_needed()
                 
         failed_count = attempted - solved_count
         
@@ -131,6 +161,7 @@ def main():
     parser.add_argument("--strategy", type=str, default="scripted", choices=["scripted", "llm_assisted"], help="Attack strategy")
     parser.add_argument("--response-mode", type=str, default="deterministic", choices=["deterministic", "groq_live"], help="Response mode")
     parser.add_argument("--max-attempts", type=int, default=8, help="Max attempts per level")
+    parser.add_argument("--delay-ms", type=int, default=0, help="Delay in ms between steps")
     parser.add_argument("--output-dir", type=str, default="reports/redteam/wizard_lab/runs", help="Base output directory")
     
     args = parser.parse_args()
@@ -143,6 +174,7 @@ def main():
         strategy_name=args.strategy,
         response_mode=args.response_mode,
         max_attempts=args.max_attempts,
+        delay_ms=args.delay_ms,
         base_dir=args.output_dir
     )
     

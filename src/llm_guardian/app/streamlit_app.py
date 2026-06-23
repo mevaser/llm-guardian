@@ -471,6 +471,10 @@ def main() -> None:
         "This demo scans only local intentionally vulnerable targets. "
         "It does not test real third-party systems."
     )
+    st.info(
+        "Looking for Wizard Lab Agent Runs? "
+        "Open [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) to view the Wizard Leak Lab Admin Dashboard."
+    )
     ensure_session_state(st.session_state)
 
     targets = list_targets()

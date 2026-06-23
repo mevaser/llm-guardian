@@ -17,6 +17,7 @@ def test_scripted_attack_runner_solves_all():
             strategy_name="scripted",
             response_mode="deterministic",
             max_attempts=8,
+            delay_ms=0,
             base_dir=tmpdir
         )
         

@@ -89,7 +89,7 @@ class ObservabilityLogger:
         with open(self.run_dir / "run_meta.json", "w", encoding="utf-8") as f:
             json.dump(meta_safe, f, indent=2)
 
-    def log_event(self, component: str, event_type: str, level_id: Optional[int] = None, session_id: Optional[str] = None, message: str = "", payload: Optional[Dict[str, Any]] = None):
+    def log_event(self, component: str, event_type: str, level_id: Optional[int] = None, session_id: Optional[str] = None, message: str = "", payload: Optional[Dict[str, Any]] = None, **kwargs):
         record = {
             "component": component,
             "event_type": event_type,
@@ -98,6 +98,7 @@ class ObservabilityLogger:
             "message": message,
             "payload": payload or {}
         }
+        record.update(kwargs)
         self._append_jsonl("events.jsonl", record)
 
     def log_decision(self, component: str, level_id: int, message: str, payload: Optional[Dict[str, Any]] = None):

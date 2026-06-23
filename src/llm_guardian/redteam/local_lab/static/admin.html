@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wizard Lab - Admin Runs</title>
+    <title>Wizard Lab Admin</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -12,70 +12,169 @@
             margin: 0;
             padding: 20px;
         }
-        h1, h2, h3 { color: #569cd6; }
-        .container { max-width: 1200px; margin: 0 auto; display: flex; gap: 20px; }
-        .sidebar { width: 300px; background: #252526; padding: 15px; border-radius: 5px; height: 90vh; overflow-y: auto; }
-        .main { flex: 1; background: #252526; padding: 20px; border-radius: 5px; height: 90vh; overflow-y: auto; }
-        .run-item { padding: 10px; margin-bottom: 10px; background: #333; cursor: pointer; border-radius: 4px; }
-        .run-item:hover, .run-item.active { background: #094771; }
-        .status-completed { color: #4CAF50; }
-        .status-running { color: #ff9800; }
-        .card { background: #333; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
-        pre { background: #1e1e1e; padding: 10px; overflow-x: auto; border: 1px solid #444; border-radius: 4px; white-space: pre-wrap; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 15px; }
-        .tab { padding: 8px 15px; background: #333; cursor: pointer; border-radius: 4px; }
+        h1, h2, h3, h4 { color: #569cd6; margin-top: 0; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            background: #252526;
+            padding: 15px 20px;
+            border-radius: 5px;
+        }
+        .header-titles h1 { margin: 0 0 5px 0; }
+        .header-titles p { margin: 0; color: #9cdcfe; font-size: 1.1em; }
+        .btn {
+            background: #094771;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            text-decoration: none;
+        }
+        .btn:hover { background: #11588a; }
+        .btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+        
+        .container { display: flex; gap: 20px; height: calc(100vh - 120px); }
+        .sidebar { width: 320px; background: #252526; padding: 15px; border-radius: 5px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+        .main { flex: 1; background: #252526; padding: 20px; border-radius: 5px; overflow-y: auto; }
+        
+        .card { background: #333; padding: 15px; border-radius: 5px; }
+        .card h3 { border-bottom: 1px solid #444; padding-bottom: 5px; margin-bottom: 10px; }
+        
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 8px; box-sizing: border-box; background: #1e1e1e; color: #d4d4d4; border: 1px solid #444; border-radius: 4px;
+        }
+        
+        .run-list { flex: 1; overflow-y: auto; border-top: 1px solid #444; padding-top: 10px; margin-top: 10px; }
+        .run-item { padding: 10px; margin-bottom: 10px; background: #333; cursor: pointer; border-radius: 4px; border-left: 4px solid transparent; }
+        .run-item:hover { background: #444; }
+        .run-item.active { background: #094771; border-left-color: #569cd6; }
+        
+        .status-completed { color: #4CAF50; font-weight: bold; }
+        .status-running { color: #ff9800; font-weight: bold; }
+        .status-failed { color: #f44336; font-weight: bold; }
+        
+        .tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .tab { padding: 8px 15px; background: #333; cursor: pointer; border-radius: 4px; font-weight: bold; }
         .tab.active { background: #094771; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #444; padding: 8px; text-align: left; }
-        th { background: #1e1e1e; }
+        
+        pre { background: #1e1e1e; padding: 15px; overflow-x: auto; border: 1px solid #444; border-radius: 4px; white-space: pre-wrap; font-size: 14px; line-height: 1.4; }
+        
+        .grid-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .grid-status div { background: #1e1e1e; padding: 10px; border-radius: 4px; text-align: center; }
+        .grid-status strong { display: block; color: #9cdcfe; font-size: 0.9em; margin-bottom: 5px; text-transform: uppercase; }
+        .grid-status span { font-size: 1.2em; }
+        
+        .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; vertical-align: middle; margin-right: 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
+<div class="header">
+    <div class="header-titles">
+        <h1>Wizard Lab Admin</h1>
+        <p>Attack-agent runs, decision traces, events, errors, and reports</p>
+    </div>
+    <a href="/" class="btn">Back to Lab</a>
+</div>
+
 <div class="container">
     <div class="sidebar">
-        <h2>Runs</h2>
-        <div id="runs-list">Loading...</div>
+        <div class="card">
+            <h3>Run Scripted Agent</h3>
+            <div class="form-group">
+                <label>Levels to Attempt</label>
+                <input type="text" id="run-levels" value="1-8">
+            </div>
+            <div class="form-group">
+                <label>Max Attempts per Level</label>
+                <input type="number" id="run-attempts" value="8" min="1">
+            </div>
+            <div class="form-group">
+                <label>Response Mode</label>
+                <select id="run-mode">
+                    <option value="deterministic">Deterministic</option>
+                    <option value="groq_live">Groq Live</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Strategy</label>
+                <select id="run-strategy" disabled>
+                    <option value="scripted">Scripted</option>
+                </select>
+            </div>
+            <button class="btn" id="btn-run" style="width: 100%; margin-top: 10px;" onclick="startRun()">Run Live Scripted Demo</button>
+        </div>
+        
+        <div class="run-list">
+            <h3 style="margin-top: 0;">Recent Runs</h3>
+            <div id="runs-list">Loading...</div>
+        </div>
     </div>
+    
     <div class="main">
+        <div id="loading-state" style="display:none; text-align: center; padding: 50px;">
+            <h2><div class="spinner"></div> Running Agent...</h2>
+            <p>Please wait while the agent attempts the levels.</p>
+            <p id="poll-status"></p>
+        </div>
+        <div id="empty-state">
+            <h2>Select a run or start a new one</h2>
+        </div>
+        
         <div id="run-details" style="display:none;">
-            <h2 id="run-title">Run Details</h2>
-            <div class="card" id="run-meta"></div>
+            <div class="card" style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 id="run-title" style="margin: 0;">Run Details</h2>
+                    <span id="run-status-badge"></span>
+                </div>
+                <div id="live-progress-bar" style="margin-top: 10px; font-weight: bold; color: #9cdcfe;"></div>
+                <div class="grid-status" style="margin-top: 15px;" id="run-meta-grid"></div>
+            </div>
             
             <div class="tabs">
-                <div class="tab active" onclick="showTab(event, 'report')">Report</div>
-                <div class="tab" onclick="showTab(event, 'trajectory')">Trajectory</div>
-                <div class="tab" onclick="showTab(event, 'events')">Events</div>
-                <div class="tab" onclick="showTab(event, 'decisions')">Decisions</div>
-                <div class="tab" onclick="showTab(event, 'errors')">Errors</div>
+                <div class="tab" onclick="showTab(event, 'events')">Live Timeline</div>
+                <div class="tab" onclick="showTab(event, 'decisions')">Current Agent Decision</div>
+                <div class="tab" onclick="showTab(event, 'trajectory')">Prompt / Wizard Response Transcript</div>
+                <div class="tab active" onclick="showTab(event, 'report')">Report Preview</div>
+                <div class="tab" onclick="showTab(event, 'errors')">Errors / Fallbacks</div>
             </div>
             
             <div id="tab-report" class="tab-content">
+                <button class="btn" onclick="refreshTab('report')" style="margin-bottom: 10px;">Refresh Report</button>
                 <pre id="report-content">Loading report...</pre>
             </div>
             <div id="tab-trajectory" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('trajectory')" style="margin-bottom: 10px;">Refresh Transcript</button>
                 <pre id="trajectory-content"></pre>
             </div>
-            <div id="tab-events" class="tab-content" style="display:none;">
-                <pre id="events-content"></pre>
-            </div>
             <div id="tab-decisions" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('decisions')" style="margin-bottom: 10px;">Refresh Decisions</button>
                 <pre id="decisions-content"></pre>
             </div>
+            <div id="tab-events" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('events')" style="margin-bottom: 10px;">Refresh Timeline</button>
+                <div id="events-content" style="display: flex; flex-direction: column; gap: 10px;"></div>
+            </div>
             <div id="tab-errors" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('errors')" style="margin-bottom: 10px;">Refresh Errors</button>
                 <pre id="errors-content"></pre>
             </div>
-        </div>
-        <div id="empty-state">
-            <h2>Select a run to view details</h2>
         </div>
     </div>
 </div>
 
 <script>
     let currentRunId = null;
+    let pollInterval = null;
 
-    async function fetchRuns() {
+    async function fetchRuns(selectRunId = null) {
         try {
             const res = await fetch('/api/admin/runs');
             const runs = await res.json();
@@ -89,48 +188,160 @@
 
             runs.forEach(run => {
                 const el = document.createElement('div');
-                el.className = 'run-item';
-                el.onclick = (e) => loadRun(e, run.run_id);
+                el.className = `run-item ${run.run_id === currentRunId ? 'active' : ''}`;
+                el.onclick = (e) => loadRun(run.run_id);
                 el.innerHTML = `
-                    <div><strong>ID:</strong> ${run.run_id.substring(0,8)}...</div>
-                    <div><strong>Time:</strong> ${new Date(run.start_time).toLocaleString()}</div>
-                    <div><strong>Strategy:</strong> ${run.strategy}</div>
-                    <div><strong>Status:</strong> <span class="status-${run.status}">${run.status}</span></div>
-                    <div><strong>Solved:</strong> ${run.levels_solved}/${run.levels_attempted}</div>
+                    <div style="font-size:0.9em; color:#9cdcfe;">ID: ${run.run_id.substring(0,8)}...</div>
+                    <div style="font-weight:bold; margin:3px 0;">${new Date(run.start_time).toLocaleString()}</div>
+                    <div style="font-size:0.9em; display:flex; justify-content:space-between;">
+                        <span class="status-${run.status}">${run.status.toUpperCase()}</span>
+                        <span>S:${run.levels_solved} / F:${run.levels_failed}</span>
+                    </div>
                 `;
                 list.appendChild(el);
             });
+            
+            if (selectRunId && runs.some(r => r.run_id === selectRunId)) {
+                loadRun(selectRunId);
+            }
         } catch (e) {
             document.getElementById('runs-list').innerText = 'Error loading runs.';
         }
     }
 
-    async function loadRun(event, runId) {
+    async function startRun() {
+        const btn = document.getElementById('btn-run');
+        btn.disabled = true;
+        btn.innerText = 'Starting...';
+        
+        const payload = {
+            levels: document.getElementById('run-levels').value,
+            max_attempts: parseInt(document.getElementById('run-attempts').value),
+            response_mode: document.getElementById('run-mode').value,
+            strategy: document.getElementById('run-strategy').value
+        };
+
+        try {
+            const res = await fetch('/api/admin/runs/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            
+            if (!res.ok) throw new Error('Failed to start run');
+            
+            const data = await res.json();
+            currentRunId = data.run_id;
+            
+            document.getElementById('empty-state').style.display = 'none';
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('run-details').style.display = 'block';
+            
+            document.getElementById('btn-run').innerText = 'Agent running...';
+            
+            // Auto switch to events tab
+            const eventsTab = document.querySelector('.tab[onclick*="events"]');
+            if (eventsTab) {
+                showTab({currentTarget: eventsTab}, 'events');
+            }
+            
+            fetchRuns();
+            loadRun(currentRunId);
+            
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(() => {
+                checkRunStatus(currentRunId);
+                const activeTabElement = document.querySelector('.tab.active');
+                if (activeTabElement) {
+                    const tabId = activeTabElement.getAttribute('onclick').match(/'([^']+)'/)[1];
+                    loadTabContent(currentRunId, tabId);
+                }
+            }, 1000);
+            
+        } catch (e) {
+            alert(e.message);
+            btn.disabled = false;
+            btn.innerText = 'Run Live Scripted Demo';
+        }
+    }
+
+    async function checkRunStatus(runId) {
+        try {
+            const res = await fetch(`/api/admin/runs/${runId}/status`);
+            if (!res.ok) return;
+            const statusData = await res.json();
+            
+            let progressText = `Level ${statusData.current_level || '?'} · Turn ${statusData.current_turn || '?'} · Solved ${statusData.levels_solved || 0} · Failed ${statusData.levels_failed || 0}`;
+            document.getElementById('live-progress-bar').innerText = progressText;
+            document.getElementById('run-status-badge').className = `status-${statusData.status}`;
+            document.getElementById('run-status-badge').innerText = statusData.status.toUpperCase();
+            
+            if (statusData.status === 'completed' || statusData.status === 'failed' || statusData.status === 'stale') {
+                clearInterval(pollInterval);
+                document.getElementById('btn-run').disabled = false;
+                document.getElementById('btn-run').innerText = 'Run Live Scripted Demo';
+                fetchRuns(runId);
+            }
+        } catch (e) {
+            console.error('Polling error', e);
+        }
+    }
+
+    async function loadRun(runId) {
+        if (pollInterval) { clearInterval(pollInterval); }
         currentRunId = runId;
+        
         document.getElementById('empty-state').style.display = 'none';
+        document.getElementById('loading-state').style.display = 'none';
         document.getElementById('run-details').style.display = 'block';
-        document.getElementById('run-title').innerText = `Run: ${runId}`;
+        document.getElementById('run-title').innerText = `Run ID: ${runId}`;
         
         // Update selection styling
         document.querySelectorAll('.run-item').forEach(el => el.classList.remove('active'));
-        if (event && event.currentTarget) {
-            event.currentTarget.classList.add('active');
-        }
-
+        // We defer active class update until fetchRuns does it, or manually here
+        fetchRuns(); // refresh sidebar list
+        
         try {
             const res = await fetch(`/api/admin/runs/${runId}`);
             const meta = await res.json();
-            document.getElementById('run-meta').innerHTML = `
-                <p><strong>Start:</strong> ${new Date(meta.start_time).toLocaleString()}</p>
-                <p><strong>Strategy:</strong> ${meta.strategy}</p>
-                <p><strong>Attempted:</strong> ${meta.levels_attempted} | <strong>Solved:</strong> ${meta.levels_solved} | <strong>Failed:</strong> ${meta.levels_failed}</p>
+            
+            document.getElementById('run-status-badge').className = `status-${meta.status}`;
+            document.getElementById('run-status-badge').innerText = meta.status.toUpperCase();
+            
+            document.getElementById('run-meta-grid').innerHTML = `
+                <div><strong>Strategy</strong><span>${meta.strategy}</span></div>
+                <div><strong>Response Mode</strong><span>${meta.response_mode || 'deterministic'}</span></div>
+                <div><strong>Start Time</strong><span style="font-size:0.9em;">${new Date(meta.start_time).toLocaleTimeString()}</span></div>
+                <div><strong>Levels Attempted</strong><span>${meta.levels_attempted || 0}</span></div>
+                <div><strong>Levels Solved</strong><span style="color:#4CAF50;">${meta.levels_solved || 0}</span></div>
+                <div><strong>Levels Failed</strong><span style="color:#f44336;">${meta.levels_failed || 0}</span></div>
             `;
+            
+            let progressText = `Level ${meta.current_level || '?'} · Turn ${meta.current_turn || '?'} · Solved ${meta.levels_solved || 0} · Failed ${meta.levels_failed || 0}`;
+            document.getElementById('live-progress-bar').innerText = progressText;
+            
+            // If running, start polling to refresh current tab
+            if (meta.status === 'running') {
+                document.getElementById('btn-run').disabled = true;
+                document.getElementById('btn-run').innerText = 'Agent running...';
+                pollInterval = setInterval(() => {
+                    checkRunStatus(runId);
+                    const activeTabElement = document.querySelector('.tab.active');
+                    if (activeTabElement) {
+                        const tabId = activeTabElement.getAttribute('onclick').match(/'([^']+)'/)[1];
+                        loadTabContent(runId, tabId);
+                    }
+                }, 1000);
+            } else {
+                document.getElementById('btn-run').disabled = false;
+                document.getElementById('btn-run').innerText = 'Run Live Scripted Demo';
+            }
             
             // Load current tab
             const activeTabElement = document.querySelector('.tab.active');
             if (activeTabElement) {
-                const activeTab = activeTabElement.innerText.toLowerCase();
-                await loadTabContent(runId, activeTab);
+                const tabId = activeTabElement.getAttribute('onclick').match(/'([^']+)'/)[1];
+                await loadTabContent(runId, tabId);
             }
         } catch(e) {
             console.error(e);
@@ -139,19 +350,90 @@
 
     async function loadTabContent(runId, artifact) {
         const el = document.getElementById(`${artifact}-content`);
-        el.innerText = 'Loading...';
+        if (el.innerText === '' || el.innerText.includes('Loading')) {
+            el.innerText = 'Loading...';
+        }
         try {
             const res = await fetch(`/api/admin/runs/${runId}/${artifact}`);
             if (artifact === 'report') {
                 const text = await res.text();
                 el.innerText = text;
+            } else if (artifact === 'events') {
+                const json = await res.json();
+                renderEventsTimeline(json);
             } else {
                 const json = await res.json();
-                el.innerText = JSON.stringify(json, null, 2);
+                el.innerText = json && json.length === 0 ? 'No data yet.' : JSON.stringify(json, null, 2);
             }
         } catch (e) {
             el.innerText = `Error loading ${artifact}`;
         }
+    }
+
+    function getBadge(type) {
+        switch(type) {
+            case 'agent_decision': return '<span style="background:#5c2d91; color:white; padding:3px 8px; border-radius:10px; font-size:0.8em; font-weight:bold;">Decision</span>';
+            case 'prompt_submitted': return '<span style="background:#094771; color:white; padding:3px 8px; border-radius:10px; font-size:0.8em; font-weight:bold;">Prompt</span>';
+            case 'wizard_response': return '<span style="background:#1f8023; color:white; padding:3px 8px; border-radius:10px; font-size:0.8em; font-weight:bold;">Wizard</span>';
+            case 'level_solved': return '<span style="background:#4CAF50; color:white; padding:3px 8px; border-radius:10px; font-size:0.8em; font-weight:bold;">Solved</span>';
+            case 'level_failed': return '<span style="background:#f44336; color:white; padding:3px 8px; border-radius:10px; font-size:0.8em; font-weight:bold;">Failed</span>';
+            case 'error': return '<span style="background:#d32f2f; color:white; padding:3px 8px; border-radius:10px; font-size:0.8em; font-weight:bold;">Error</span>';
+            default: return `<span style="background:#444; color:white; padding:3px 8px; border-radius:10px; font-size:0.8em; font-weight:bold;">${type}</span>`;
+        }
+    }
+
+    function renderEventsTimeline(events) {
+        const el = document.getElementById('events-content');
+        if (!events || events.length === 0) {
+            el.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">No events yet.</div>';
+            return;
+        }
+        
+        let html = '';
+        events.forEach(ev => {
+            const time = new Date(ev.timestamp).toLocaleTimeString();
+            let contentHtml = '';
+            
+            if (ev.event_type === 'agent_decision') {
+                contentHtml = `
+                    <div style="margin-top:10px;">
+                        <div><strong>Strategy:</strong> ${ev.strategy_name || 'N/A'}</div>
+                        <div><strong>Reason:</strong> ${ev.decision_reason || 'N/A'}</div>
+                        <div style="margin-top:5px; background:#1e1e1e; padding:10px; border-radius:4px; font-family:monospace;">${ev.selected_prompt || ''}</div>
+                    </div>`;
+            } else if (ev.event_type === 'prompt_submitted') {
+                contentHtml = `
+                    <div style="margin-top:10px;">
+                        <div style="background:#1e1e1e; padding:10px; border-radius:4px; font-family:monospace; border-left: 3px solid #094771;">${ev.prompt || ev.payload?.prompt || ''}</div>
+                    </div>`;
+            } else if (ev.event_type === 'wizard_response') {
+                contentHtml = `
+                    <div style="margin-top:10px;">
+                        <div><strong>Intent:</strong> ${ev.intent || 'N/A'} | <strong>Outcome:</strong> ${ev.outcome_type || 'N/A'}</div>
+                        <div style="margin-top:5px; background:#1e1e1e; padding:10px; border-radius:4px; font-family:monospace; border-left: 3px solid #1f8023;">${ev.response || ''}</div>
+                    </div>`;
+            } else if (ev.event_type === 'level_started') {
+                 contentHtml = `<div><strong>Level ${ev.level_id} Started</strong></div>`;
+            }
+            
+            html += `
+                <div class="card" style="margin-bottom: 15px; border-left: 4px solid #569cd6;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div style="display:flex; align-items:center; gap: 10px;">
+                            ${getBadge(ev.event_type)}
+                            <strong style="color:#d4d4d4;">Level ${ev.level_id || '?'}</strong>
+                        </div>
+                        <span style="font-size:0.8em; color:#888;">${time}</span>
+                    </div>
+                    ${contentHtml}
+                </div>
+            `;
+        });
+        
+        el.innerHTML = html;
+        // Scroll to bottom
+        const container = document.querySelector('.main');
+        container.scrollTop = container.scrollHeight;
     }
 
     function showTab(event, tabName) {
@@ -167,7 +449,14 @@
             loadTabContent(currentRunId, tabName);
         }
     }
+    
+    function refreshTab(tabName) {
+        if (currentRunId) {
+            loadTabContent(currentRunId, tabName);
+        }
+    }
 
+    // Init
     fetchRuns();
 </script>
 
