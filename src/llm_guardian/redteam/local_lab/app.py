@@ -1,7 +1,7 @@
 import uuid
 from typing import Dict, List
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -12,6 +12,7 @@ from llm_guardian.redteam.local_lab.models import (
 from llm_guardian.redteam.local_lab.levels import LEVELS, evaluate_prompt
 from llm_guardian.redteam.local_lab import groq_composer
 from llm_guardian.redteam.local_lab.observability import Redactor
+from pydantic import BaseModel
 import logging
 import os
 import json
@@ -194,6 +195,116 @@ def submit_prompt(request: SubmitRequest):
 
 RUNS_DIR = Path("reports/redteam/wizard_lab/runs")
 
+class RunStartRequest(BaseModel):
+    levels: str = "1-8"
+    strategy: str = "autonomous"
+    response_mode: str = "deterministic"
+    max_attempts: int = 8
+    delay_ms: int = 1000
+    planner_model: str = "llama-3.1-8b-instant"
+    planner_temperature: float = 0.7
+
+def run_agent_in_background(levels_str: str, strategy: str, response_mode: str, max_attempts: int, delay_ms: int, run_id: str, planner_model: str, planner_temperature: float):
+    logger.info(f"Starting background agent run {run_id}")
+    try:
+        from llm_guardian.redteam.local_lab.attack_agent import AttackRunner, parse_levels
+        from llm_guardian.redteam.local_lab.adapters import LocalLabAdapter
+        
+        levels = parse_levels(levels_str)
+        adapter = LocalLabAdapter()
+        runner = AttackRunner(
+            adapter=adapter,
+            strategy_name=strategy,
+            response_mode=response_mode,
+            max_attempts=max_attempts,
+            delay_ms=delay_ms,
+            base_dir=str(RUNS_DIR),
+            run_id=run_id,
+            planner_model=planner_model,
+            planner_temperature=planner_temperature
+        )
+        
+        runner.run_all(levels)
+    except Exception as e:
+        logger.error(f"Background run {run_id} failed: {str(e)}")
+        # Try to mark failed if possible
+        meta_file = RUNS_DIR / run_id / "run_meta.json"
+        if meta_file.exists():
+            try:
+                with open(meta_file, "r") as f:
+                    meta = json.load(f)
+                meta["status"] = "failed"
+                with open(meta_file, "w") as f:
+                    json.dump(meta, f)
+            except Exception:
+                pass
+
+@app.post("/api/admin/runs/start")
+def start_run(req: RunStartRequest, background_tasks: BackgroundTasks):
+    if req.strategy == "autonomous" and not groq_key_present:
+        raise HTTPException(status_code=400, detail="Autonomous mode requires GROQ_API_KEY. Scripted baseline is still available.")
+        
+    run_id = str(uuid.uuid4())
+    run_dir = RUNS_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize meta so frontend can poll immediately
+    import datetime
+    meta = {
+        "run_id": run_id,
+        "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "status": "running",
+        "strategy": req.strategy,
+        "response_mode": req.response_mode,
+        "levels_attempted": 0,
+        "levels_solved": 0,
+        "levels_failed": 0
+    }
+    with open(run_dir / "run_meta.json", "w") as f:
+        json.dump(meta, f)
+        
+    background_tasks.add_task(
+        run_agent_in_background,
+        req.levels,
+        req.strategy,
+        req.response_mode,
+        req.max_attempts,
+        req.delay_ms,
+        run_id,
+        req.planner_model,
+        req.planner_temperature
+    )
+    
+    return {
+        "run_id": run_id,
+        "status": "running",
+        "output_dir": str(run_dir),
+        "message": "Run started in background."
+    }
+
+import datetime
+
+def _check_stale(meta: dict) -> dict:
+    if meta.get("status") == "running" and meta.get("levels_attempted", 0) == 0:
+        start_time_str = meta.get("start_time")
+        if start_time_str:
+            try:
+                start_time = datetime.datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                now = datetime.datetime.now(datetime.timezone.utc)
+                if (now - start_time).total_seconds() > 60:
+                    meta["status"] = "stale"
+            except Exception:
+                pass
+    return meta
+
+@app.get("/api/admin/runs/{run_id}/status")
+def get_run_status(run_id: str):
+    meta_file = RUNS_DIR / run_id / "run_meta.json"
+    if not meta_file.exists():
+        raise HTTPException(status_code=404, detail="Run not found")
+    with open(meta_file, "r", encoding="utf-8") as f:
+        return _check_stale(json.load(f))
+
 @app.get("/api/admin/runs")
 def get_runs():
     if not RUNS_DIR.exists():
@@ -204,7 +315,7 @@ def get_runs():
             meta_file = run_dir / "run_meta.json"
             if meta_file.exists():
                 with open(meta_file, "r", encoding="utf-8") as f:
-                    runs.append(json.load(f))
+                    runs.append(_check_stale(json.load(f)))
     runs.sort(key=lambda x: x.get("start_time", ""), reverse=True)
     return runs
 
@@ -214,7 +325,7 @@ def get_run(run_id: str):
     if not meta_file.exists():
         raise HTTPException(status_code=404, detail="Run not found")
     with open(meta_file, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return _check_stale(json.load(f))
 
 from fastapi.responses import PlainTextResponse, JSONResponse
 
@@ -244,7 +355,10 @@ def get_run_artifact(run_id: str, artifact: str):
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
-                    lines.append(json.loads(line))
+                    try:
+                        lines.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
         return JSONResponse(Redactor.redact_dict({"data": lines})["data"])
         
     elif artifact == "trajectory":

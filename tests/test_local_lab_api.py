@@ -245,3 +245,27 @@ def test_groq_called_on_non_success(mock_compose):
     from llm_guardian.redteam.local_lab.levels import LEVELS
     actual_secret = LEVELS[1].secret.lower()
     assert actual_secret not in call_args["deterministic_base_response"].lower()
+
+def test_admin_run_start(mock_runs_dir):
+    response = client.post(
+        "/api/admin/runs/start",
+        json={"levels": "1", "strategy": "scripted", "response_mode": "deterministic", "max_attempts": 1, "delay_ms": 0}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "run_id" in data
+    assert data["status"] == "running"
+    assert "output_dir" in data
+
+    run_id = data["run_id"]
+    
+    # Check status endpoint
+    status_response = client.get(f"/api/admin/runs/{run_id}/status")
+    assert status_response.status_code == 200
+    status_data = status_response.json()
+    assert status_data["run_id"] == run_id
+    assert status_data["status"] in ["running", "completed", "failed"]
+
+def test_admin_run_status_not_found(mock_runs_dir):
+    response = client.get("/api/admin/runs/missing_run/status")
+    assert response.status_code == 404
