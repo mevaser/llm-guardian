@@ -8,13 +8,28 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
+from llm_guardian.env import load_local_dotenv
+
+load_local_dotenv()
+
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
-from llm_guardian.config import DEFAULT_ATTACK_LIBRARY_PATH, DEFAULT_TARGET_PROFILES_PATH
-from llm_guardian.models import AttackCategory, ScanReport
+from llm_guardian.config import (
+    DEFAULT_ATTACK_LIBRARY_PATH,
+    DEFAULT_TARGET_PROFILES_PATH,
+)
+from llm_guardian.models import AttackCategory, ScanReport, SecurityScanResult, Severity
 from llm_guardian.runner.scan_service import (
     render_report_json,
     render_report_markdown,
     run_offline_scan,
+)
+from llm_guardian.scenario_generation import (
+    FakeScenarioLLMProvider,
+    GroqScenarioLLMProvider,
+    ProviderConfigurationError,
+    build_target_profile_summary,
+    generate_attack_scenarios,
+    write_generated_scenarios_yaml,
 )
 from llm_guardian.security_agent import (
     LLMAssistedPromptMutator,
@@ -23,6 +38,7 @@ from llm_guardian.security_agent import (
     SecurityAgentMarkdownReportBuilder,
     SecurityTestObjective,
     OllamaLLMClient,
+    SecurityScanAgent,
     StaticFakeLLMClient,
     TargetProfile,
 )
@@ -64,6 +80,8 @@ _AGENT_SCAN_TARGET_SETTINGS = {
         "allowed_categories": ["tool_abuse", "prompt_injection", "jailbreak"],
     },
 }
+_DEMO_AGENT_SCAN_TARGET = "demo-vulnerable-rag"
+_DEFAULT_AGENT_SCAN_OUTPUT_DIR = Path("reports") / "latest_scan"
 
 
 def _load_default_library():
@@ -154,10 +172,35 @@ def agent_scan(
     llm_provider: str,
     llm_model: str | None,
     llm_timeout_seconds: int,
+    scenario_file: Path | None,
+    output_dir: Path | None,
     output_format: str,
     output_file: Path | None,
     target_profile_path: Path,
 ) -> int:
+    if target == _DEMO_AGENT_SCAN_TARGET:
+        try:
+            report_path, trajectory_path, summary = _run_demo_agent_scan(
+                target=target,
+                output_dir=output_dir or _DEFAULT_AGENT_SCAN_OUTPUT_DIR,
+                scenario_file=scenario_file,
+            )
+        except (AttackLibraryLoadError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        print("LLM Guardian Scan Complete")
+        print(f"Target: {summary['target']}")
+        print(f"Scenarios tested: {summary['scenarios_tested']}")
+        print(f"Adaptive probes: {summary['adaptive_probes']}")
+        print(f"Passed: {summary['passed']}")
+        print(f"Failed: {summary['failed']}")
+        print(f"Critical: {summary['critical']}")
+        print(f"Overall Risk: {summary['overall_risk']}")
+        print(f"Report path: {report_path}")
+        print(f"Trajectory path: {trajectory_path}")
+        return 0
+
     try:
         selected_categories = _normalize_agent_scan_categories(
             category_flags=category_flags,
@@ -225,6 +268,60 @@ def agent_scan(
     return 0
 
 
+def _run_demo_agent_scan(
+    *,
+    target: str,
+    output_dir: Path,
+    scenario_file: Path | None = None,
+) -> tuple[Path, Path, dict[str, int | str]]:
+    scan_result = SecurityScanAgent().run(
+        target_name=target,
+        output_dir=output_dir,
+        scenario_file=scenario_file,
+    )
+    resolved_output_dir = Path(output_dir)
+    trajectory_path = resolved_output_dir / "trajectory.json"
+    report_path = resolved_output_dir / "scan_report.md"
+    summary = _build_demo_scan_summary(scan_result)
+    return report_path, trajectory_path, summary
+
+
+def _build_demo_scan_summary(scan_result: SecurityScanResult) -> dict[str, int | str]:
+    findings = scan_result.findings
+    passed = sum(1 for finding in findings if finding.verdict == "pass")
+    failed = len(findings) - passed
+    critical = sum(
+        1
+        for finding in findings
+        if finding.verdict == "fail" and finding.severity == Severity.CRITICAL
+    )
+    overall_risk = _calculate_demo_overall_risk(findings)
+    return {
+        "target": scan_result.target_name,
+        "scenarios_tested": len(findings),
+        "adaptive_probes": len(scan_result.adaptive_probes),
+        "passed": passed,
+        "failed": failed,
+        "critical": critical,
+        "overall_risk": overall_risk,
+    }
+
+
+def _calculate_demo_overall_risk(findings) -> str:
+    failed_severities = {
+        finding.severity
+        for finding in findings
+        if finding.verdict == "fail"
+    }
+    if Severity.CRITICAL in failed_severities:
+        return "CRITICAL"
+    if Severity.HIGH in failed_severities:
+        return "HIGH"
+    if Severity.MEDIUM in failed_severities:
+        return "MEDIUM"
+    return "LOW"
+
+
 def _build_agent_scan_mutator(
     *,
     mutation_strategy_mode: str,
@@ -253,6 +350,63 @@ def _build_llm_client(*, llm_provider: str, llm_model: str | None, llm_timeout_s
         return OllamaLLMClient(model=llm_model, timeout_seconds=llm_timeout_seconds)
 
     raise ValueError(f"Unsupported LLM provider '{llm_provider}'.")
+
+
+def generate_scenarios(
+    *,
+    target: str,
+    count: int,
+    output: Path,
+    provider: str,
+    model: str | None,
+    base_url: str | None,
+) -> int:
+    try:
+        scenario_provider, provider_model = _build_scenario_provider(
+            provider=provider,
+            model=model,
+            base_url=base_url,
+        )
+    except (ProviderConfigurationError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    try:
+        result = generate_attack_scenarios(
+            target_name=target,
+            target_profile_summary=build_target_profile_summary(target),
+            provider=scenario_provider,
+            count=count,
+        )
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    write_generated_scenarios_yaml(
+        result.accepted_scenarios,
+        output,
+        metadata={
+            "target_name": target,
+            "provider": provider,
+            "model": provider_model,
+            "requested_count": count,
+            "accepted_count": len(result.accepted_scenarios),
+        },
+    )
+
+    print("Scenario generation complete")
+    print(f"Target: {target}")
+    print(f"Provider: {provider}")
+    print(f"Model: {provider_model}")
+    print(f"Requested: {count}")
+    print(f"Accepted: {len(result.accepted_scenarios)}")
+    print(f"Rejected: {len(result.rejected_scenarios)}")
+    print(f"Output path: {output}")
+    if result.validation_errors:
+        print("Validation errors:")
+        for error in result.validation_errors:
+            print(f"- {error}")
+    return 0
 
 
 def list_attacks() -> int:
@@ -380,9 +534,22 @@ def build_parser() -> argparse.ArgumentParser:
     agent_scan_parser.add_argument("--llm-provider", choices=("fake", "ollama"), default="fake")
     agent_scan_parser.add_argument("--llm-model", default=None)
     agent_scan_parser.add_argument("--llm-timeout-seconds", type=_positive_int, default=30)
+    agent_scan_parser.add_argument("--scenario-file", type=Path, default=None)
+    agent_scan_parser.add_argument("--output-dir", type=Path)
     agent_scan_parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
     agent_scan_parser.add_argument("--output-file", type=Path)
     agent_scan_parser.add_argument("--target-profile", type=Path, default=DEFAULT_TARGET_PROFILES_PATH)
+
+    generate_scenarios_parser = subparsers.add_parser(
+        "generate-scenarios",
+        help="Generate optional attack scenarios with a provider behind a stable interface.",
+    )
+    generate_scenarios_parser.add_argument("--target", required=True)
+    generate_scenarios_parser.add_argument("--count", type=_positive_int, default=2)
+    generate_scenarios_parser.add_argument("--output", type=Path, required=True)
+    generate_scenarios_parser.add_argument("--provider", choices=("fake", "groq"), default="fake")
+    generate_scenarios_parser.add_argument("--model", default=None)
+    generate_scenarios_parser.add_argument("--base-url", default=None)
 
     report_parser = subparsers.add_parser("validate-report", help="Validate a structured report JSON file.")
     report_parser.add_argument("path", type=Path)
@@ -422,9 +589,20 @@ def main(argv: list[str] | None = None) -> int:
                 llm_provider=args.llm_provider,
                 llm_model=args.llm_model,
                 llm_timeout_seconds=args.llm_timeout_seconds,
+                scenario_file=args.scenario_file,
+                output_dir=args.output_dir,
                 output_format=args.output_format,
                 output_file=args.output_file,
                 target_profile_path=args.target_profile,
+            )
+        if args.command == "generate-scenarios":
+            return generate_scenarios(
+                target=args.target,
+                count=args.count,
+                output=args.output,
+                provider=args.provider,
+                model=args.model,
+                base_url=args.base_url,
             )
         if args.command == "validate-report":
             return validate_report(args.path)
@@ -440,6 +618,23 @@ def app() -> int:
     """Console script entry point."""
 
     return main()
+
+
+def _build_scenario_provider(
+    *,
+    provider: str,
+    model: str | None,
+    base_url: str | None,
+):
+    if provider == "fake":
+        return FakeScenarioLLMProvider(), "fake-deterministic"
+    if provider == "groq":
+        scenario_provider = GroqScenarioLLMProvider(
+            model=model or "llama-3.3-70b-versatile",
+            base_url=base_url or "https://api.groq.com/openai/v1",
+        )
+        return scenario_provider, scenario_provider.model
+    raise ValueError(f"Unsupported scenario provider '{provider}'.")
 
 
 if __name__ == "__main__":

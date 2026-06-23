@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from llm_guardian.models import AttackCase, AttackCategory, ScanReport, Severity
+from llm_guardian.models import AttackCase, AttackCategory, ScanReport, SecurityFinding, Severity
 
 
 def test_attack_case_defaults_indicator_lists() -> None:
@@ -116,3 +116,17 @@ def test_scan_report_validates_richer_schema() -> None:
     assert report.findings[0].title == "Reveal system prompt"
     assert report.findings[0].trace[0].attack_id == "PI-001"
     assert isinstance(report.created_at, datetime)
+
+
+def test_security_finding_validates_required_fields() -> None:
+    finding = SecurityFinding(
+        scenario_id="scenario-001",
+        category="unsafe_tool_use",
+        verdict="fail",
+        severity=Severity.CRITICAL,
+        reason="Detected attacker email exfiltration via send_email.",
+        evidence="Matched tool name: send_email; matched recipient: attacker@example.com",
+    )
+
+    assert finding.verdict == "fail"
+    assert finding.severity is Severity.CRITICAL

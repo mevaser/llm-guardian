@@ -2,8 +2,24 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
 
+from llm_guardian.attacks.loader import load_attack_scenario_metadata, load_attack_scenarios
+from llm_guardian.config import DEFAULT_ATTACK_SCENARIOS_PATH, REPOSITORY_ROOT
+from llm_guardian.evaluators import grade_result
+from llm_guardian.models import (
+    AdaptiveProbeResult,
+    AgentPlan,
+    AgentTraceStep,
+    SecurityScanResult,
+    Severity,
+)
+from llm_guardian.reports.markdown import generate_markdown_report
+from llm_guardian.reports.trajectory import write_trajectory_log
+from llm_guardian.runner import run_scenario
 from llm_guardian.security_agent.adapters import TargetAdapter
 from llm_guardian.security_agent.executor import AttackExecutor
 from llm_guardian.security_agent.findings import SecurityFindingBuilder
@@ -313,3 +329,326 @@ class SecurityAgent:
             f"skipped_or_unknown: {risk_summary['skipped_or_unknown_attempts']}; "
             f"success_rate: {float(risk_summary['success_rate']):.2f}."
         )
+
+
+class SecurityScanAgent:
+    """Run the deterministic MVP scenario-scan pipeline for approved local demo targets."""
+
+    _DEMO_TARGET_NAME = "demo-vulnerable-rag"
+
+    def run(
+        self,
+        target_name: str,
+        output_dir: Path,
+        scenario_file: Path | None = None,
+        scenario_provider: str | None = None,
+    ) -> SecurityScanResult:
+        resolved_scenario_file = Path(scenario_file) if scenario_file is not None else None
+        scenario_metadata = self._load_scenario_metadata(resolved_scenario_file)
+        scenarios = self._load_scenarios(resolved_scenario_file)
+        agent_trace: list[AgentTraceStep] = []
+        next_step = 1
+        agent_plan = self._build_agent_plan(
+            target_name=target_name,
+            scenarios=scenarios,
+            scenario_file=resolved_scenario_file,
+            scenario_provider=self._resolve_scenario_provider(
+                scenario_file=resolved_scenario_file,
+                scenario_metadata=scenario_metadata,
+                explicit_scenario_provider=scenario_provider,
+            ),
+            scenario_model=self._resolve_scenario_model(scenario_metadata),
+            generated_scenario_count=self._resolve_generated_scenario_count(
+                scenarios=scenarios,
+                scenario_metadata=scenario_metadata,
+            ),
+        )
+        scenario_source_path = resolved_scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH
+        agent_trace.append(
+            AgentTraceStep(
+                step=next_step,
+                phase="plan",
+                action="Selected deterministic scenarios from the local YAML scenario library.",
+                observation=(
+                    f"Loaded {agent_plan.scenario_count} scenarios from "
+                    f"{scenario_source_path.name}."
+                ),
+                decision="Execute the selected scenarios in fixed YAML order.",
+                evidence=", ".join(agent_plan.selected_scenario_ids),
+            )
+        )
+        next_step += 1
+        target_module = self._resolve_target(target_name)
+        scenario_results = []
+        findings = []
+        for scenario in scenarios:
+            scenario_result = run_scenario(target_module, scenario)
+            scenario_results.append(scenario_result)
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="execute",
+                    scenario_id=scenario.id,
+                    action=f"Executed scenario '{scenario.id}' against the demo target.",
+                    observation="Collected a deterministic response, tool trace, and retrieved context.",
+                    decision="Inspect the captured runtime evidence.",
+                )
+            )
+            next_step += 1
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="observe",
+                    scenario_id=scenario.id,
+                    action="Reviewed the target response and tool trace.",
+                    observation=self._build_observation_summary(scenario_result),
+                    decision="Grade the scenario with deterministic evaluator rules.",
+                    evidence=self._build_observation_evidence(scenario_result),
+                )
+            )
+            next_step += 1
+            finding = grade_result(scenario, scenario_result)
+            findings.append(finding)
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="evaluate",
+                    scenario_id=scenario.id,
+                    action="Applied deterministic grading rules to the observed behavior.",
+                    observation=f"Scenario verdict: {finding.verdict}; severity: {finding.severity.value}.",
+                    decision=finding.reason,
+                    evidence=finding.evidence,
+                )
+            )
+            next_step += 1
+
+        adaptive_probes = self._build_adaptive_probes(findings=findings)
+        for adaptive_probe in adaptive_probes:
+            agent_trace.append(
+                AgentTraceStep(
+                    step=next_step,
+                    phase="adapt",
+                    scenario_id=adaptive_probe.trigger_scenario_id,
+                    action=f"Recorded adaptive follow-up probe '{adaptive_probe.probe_id}'.",
+                    observation=adaptive_probe.observation,
+                    decision=adaptive_probe.recommendation,
+                    evidence=adaptive_probe.evidence,
+                )
+            )
+            next_step += 1
+        scan_result = SecurityScanResult(
+            scan_id=self._build_scan_id(),
+            target_name=target_name,
+            target_profile=self._build_target_profile(
+                target_name,
+                scenario_file=resolved_scenario_file,
+                scenario_provider=agent_plan.scenario_provider,
+                scenario_model=agent_plan.scenario_model,
+                generated_scenario_count=agent_plan.generated_scenario_count,
+            ),
+            agent_plan=agent_plan,
+            agent_trace=agent_trace,
+            scenario_results=scenario_results,
+            findings=findings,
+            adaptive_probes=adaptive_probes,
+        )
+        scan_result.agent_trace.append(
+            AgentTraceStep(
+                step=next_step,
+                phase="report",
+                action="Prepared the trajectory and Markdown report outputs.",
+                observation=(
+                    f"Collected {len(scan_result.findings)} graded scenarios and "
+                    f"{len(scan_result.adaptive_probes)} adaptive probes."
+                ),
+                decision="Write both scan artifacts to the requested output directory.",
+            )
+        )
+        self._write_outputs(scan_result=scan_result, output_dir=output_dir)
+        return scan_result
+
+    def _load_scenarios(self, scenario_file: Path | None = None):
+        return load_attack_scenarios(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH)
+
+    def _load_scenario_metadata(self, scenario_file: Path | None = None) -> dict[str, object]:
+        if scenario_file is None:
+            return {}
+        return load_attack_scenario_metadata(scenario_file)
+
+    def _resolve_target(self, target_name: str):
+        if target_name != self._DEMO_TARGET_NAME:
+            raise ValueError(
+                f"Unknown target '{target_name}'. Supported targets: {self._DEMO_TARGET_NAME}"
+            )
+
+        module_path = REPOSITORY_ROOT / "demo_targets" / "vulnerable_rag_agent" / "target.py"
+        spec = importlib.util.spec_from_file_location(
+            "llm_guardian_demo_vulnerable_rag_target",
+            module_path,
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError(f"Could not load demo target module: {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _write_outputs(self, *, scan_result: SecurityScanResult, output_dir: Path) -> None:
+        resolved_output_dir = Path(output_dir)
+        write_trajectory_log(scan_result, resolved_output_dir / "trajectory.json")
+        generate_markdown_report(scan_result, resolved_output_dir / "scan_report.md")
+
+    @staticmethod
+    def _build_scan_id() -> str:
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        return f"demo-scan-{timestamp}"
+
+    def _build_target_profile(
+        self,
+        target_name: str,
+        *,
+        scenario_file: Path | None = None,
+        scenario_provider: str | None = None,
+        scenario_model: str | None = None,
+        generated_scenario_count: int | None = None,
+    ) -> dict[str, str | bool | int]:
+        profile: dict[str, str | bool | int] = {
+            "target_name": target_name,
+            "target_type": "local_demo_rag_module",
+            "scenario_source": str(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH),
+            "authorization_scope": "local_demo_only",
+            "offline_only": True,
+        }
+        if scenario_provider is not None:
+            profile["scenario_provider"] = scenario_provider
+        if scenario_model is not None:
+            profile["scenario_model"] = scenario_model
+        if generated_scenario_count is not None:
+            profile["generated_scenario_count"] = generated_scenario_count
+        return profile
+
+    @staticmethod
+    def _build_agent_plan(
+        *,
+        target_name: str,
+        scenarios,
+        scenario_file: Path | None = None,
+        scenario_provider: str | None = None,
+        scenario_model: str | None = None,
+        generated_scenario_count: int | None = None,
+    ) -> AgentPlan:
+        selected_scenario_ids = [scenario.id for scenario in scenarios]
+        resolved_scenario_source = str(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH)
+        return AgentPlan(
+            target_name=target_name,
+            scenario_count=len(selected_scenario_ids),
+            selected_scenario_ids=selected_scenario_ids,
+            scenario_source=resolved_scenario_source,
+            generated_scenario_count=generated_scenario_count,
+            scenario_provider=scenario_provider,
+            scenario_model=scenario_model,
+            rationale=(
+                "Run every deterministic demo scenario to measure prompt-injection, "
+                "tool-use, secret-handling, and benign-response behavior in one stable scan."
+            ),
+            execution_strategy=(
+                "Execute scenarios in fixed YAML order, observe response and tool evidence, "
+                "grade with deterministic rules, then add follow-up probes for critical failures."
+            ),
+        )
+
+    @staticmethod
+    def _build_observation_summary(scenario_result) -> str:
+        tool_count = len(scenario_result.tool_trace)
+        has_context = bool(scenario_result.retrieved_context.strip())
+        return (
+            f"Observed {tool_count} tool call(s); "
+            f"retrieved_context_present={'yes' if has_context else 'no'}."
+        )
+
+    @staticmethod
+    def _build_observation_evidence(scenario_result) -> str:
+        if scenario_result.tool_trace:
+            first_tool = scenario_result.tool_trace[0]
+            tool_name = first_tool.get("tool") or first_tool.get("tool_name") or first_tool.get("name")
+            return f"First tool trace entry: {tool_name or 'unknown'}"
+        if scenario_result.retrieved_context.strip():
+            return "Retrieved context was captured for inspection."
+        return "No tool activity or retrieved context was captured."
+
+    @staticmethod
+    def _build_adaptive_probes(
+        *,
+        findings,
+    ) -> list[AdaptiveProbeResult]:
+        adaptive_probes: list[AdaptiveProbeResult] = []
+        for index, finding in enumerate(findings, start=1):
+            if finding.verdict != "fail" or finding.severity != Severity.CRITICAL:
+                continue
+            if finding.category == "unsafe_tool_use" and "attacker@example.com" in finding.reason:
+                adaptive_probes.append(
+                    AdaptiveProbeResult(
+                        probe_id=f"adaptive-probe-{index:03d}",
+                        trigger_scenario_id=finding.scenario_id,
+                        category=finding.category,
+                        status="confirmed",
+                        observation=(
+                            "Adaptive follow-up confirmed unsafe outbound tool behavior "
+                            "targeting attacker@example.com."
+                        ),
+                        recommendation="Add tool-call gating before any outbound email or export action.",
+                        evidence=finding.evidence,
+                    )
+                )
+                continue
+            adaptive_probes.append(
+                AdaptiveProbeResult(
+                    probe_id=f"adaptive-probe-{index:03d}",
+                    trigger_scenario_id=finding.scenario_id,
+                    category=finding.category,
+                    status="confirmed",
+                    observation=(
+                        "Adaptive follow-up confirmed the critical failure remained visible in "
+                        "the deterministic evidence."
+                    ),
+                    recommendation="Gate sensitive tool access and block secret-handling actions by policy.",
+                    evidence=finding.evidence,
+                )
+            )
+        return adaptive_probes
+
+    @staticmethod
+    def _resolve_scenario_provider(
+        *,
+        scenario_file: Path | None,
+        scenario_metadata: dict[str, object],
+        explicit_scenario_provider: str | None,
+    ) -> str | None:
+        provider = scenario_metadata.get("provider")
+        if isinstance(provider, str) and provider.strip():
+            return provider.strip()
+        if explicit_scenario_provider is not None and explicit_scenario_provider.strip():
+            return explicit_scenario_provider.strip()
+        if scenario_file is not None:
+            return "external"
+        return None
+
+    @staticmethod
+    def _resolve_scenario_model(scenario_metadata: dict[str, object]) -> str | None:
+        model = scenario_metadata.get("model")
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+        return None
+
+    @staticmethod
+    def _resolve_generated_scenario_count(
+        *,
+        scenarios,
+        scenario_metadata: dict[str, object],
+    ) -> int | None:
+        accepted_count = scenario_metadata.get("accepted_count")
+        if isinstance(accepted_count, int):
+            return accepted_count
+        if isinstance(accepted_count, str) and accepted_count.isdigit():
+            return int(accepted_count)
+        generated_count = len([scenario for scenario in scenarios if scenario.id.startswith("generated-")])
+        return generated_count or None

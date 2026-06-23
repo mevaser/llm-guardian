@@ -1,7 +1,7 @@
 """Security agent models, adapters, orchestration, and deterministic execution primitives."""
 
 from llm_guardian.security_agent.adapters import AdapterExecutionResult, LocalTargetAdapter, TargetAdapter
-from llm_guardian.security_agent.agent import SecurityAgent
+from llm_guardian.security_agent.agent import SecurityAgent, SecurityScanAgent
 from llm_guardian.security_agent.executor import AttackExecutor
 from llm_guardian.security_agent.findings import SecurityFindingBuilder
 from llm_guardian.security_agent.models import (
@@ -42,6 +42,7 @@ __all__ = [
     "AttackCampaign",
     "AttackAttempt",
     "SecurityAgent",
+    "SecurityScanAgent",
     "AttackExecutor",
     "AttackPlan",
     "AttackPlanner",

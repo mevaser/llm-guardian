@@ -4,21 +4,32 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPOSITORY_ROOT / "src")
     return subprocess.run(
         [sys.executable, "-m", "llm_guardian.cli", *args],
-        cwd=REPOSITORY_ROOT,
+        cwd=cwd or REPOSITORY_ROOT,
         env=env,
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def import_cli_module_from_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    working_directory: Path,
+):
+    monkeypatch.chdir(working_directory)
+    sys.modules.pop("llm_guardian.cli", None)
+    return __import__("llm_guardian.cli", fromlist=["main"])
 
 
 def normalize_agent_scan_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -482,3 +493,190 @@ def test_baseline_scan_command_behavior_remains_unchanged() -> None:
     assert "Target: customer_support" in result.stdout
     assert "Risk score:" in result.stdout
     assert "LLM Guardian Security Agent Report" not in result.stdout
+
+
+def test_agent_scan_demo_vulnerable_rag_writes_mvp_outputs_and_summary(tmp_path: Path) -> None:
+    output_dir = tmp_path / "nested" / "demo-scan"
+
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "demo-vulnerable-rag",
+        "--output-dir",
+        str(output_dir),
+    )
+
+    assert result.returncode == 0
+    assert output_dir.is_dir()
+
+    trajectory_path = output_dir / "trajectory.json"
+    report_path = output_dir / "scan_report.md"
+    assert trajectory_path.exists()
+    assert report_path.exists()
+
+    stdout = result.stdout
+    assert "LLM Guardian Scan Complete" in stdout
+    assert "Adaptive probes: 2" in stdout
+    assert "Overall Risk" in stdout
+
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "verdict: fail" in report_text
+    assert "## Agent Plan" in report_text
+    assert "## Agent Execution Trace" in report_text
+    assert "## Adaptive Probes" in report_text
+
+    trajectory_payload = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    assert trajectory_payload["target_name"] == "demo-vulnerable-rag"
+    assert trajectory_payload["agent_plan"]["scenario_count"] == 8
+    assert trajectory_payload["agent_trace"]
+    assert len(trajectory_payload["adaptive_probes"]) == 2
+    assert trajectory_payload["scenarios"]
+    assert any(item["verdict"] == "fail" for item in trajectory_payload["scenarios"])
+    assert all("scenario_id" in item for item in trajectory_payload["scenarios"])
+    assert all("evidence" in item for item in trajectory_payload["scenarios"])
+
+
+def test_generate_scenarios_command_writes_yaml(tmp_path: Path) -> None:
+    output_path = tmp_path / "generated_attack_scenarios.yaml"
+
+    result = run_cli(
+        "generate-scenarios",
+        "--target",
+        "demo-vulnerable-rag",
+        "--count",
+        "2",
+        "--output",
+        str(output_path),
+        "--provider",
+        "fake",
+    )
+
+    assert result.returncode == 0
+    assert output_path.exists()
+    assert "Scenario generation complete" in result.stdout
+    assert "Accepted: 2" in result.stdout
+    assert "Rejected: 0" in result.stdout
+    output_text = output_path.read_text(encoding="utf-8")
+    assert "scenarios:" in output_text
+    assert "generated-" in output_text
+
+
+def test_generate_scenarios_command_with_groq_missing_key_fails_cleanly(tmp_path: Path) -> None:
+    output_path = tmp_path / "generated_attack_scenarios.yaml"
+    previous_value = os.environ.pop("GROQ_API_KEY", None)
+
+    try:
+        result = run_cli(
+            "generate-scenarios",
+            "--target",
+            "demo-vulnerable-rag",
+            "--count",
+            "2",
+            "--output",
+            str(output_path),
+            "--provider",
+            "groq",
+            cwd=tmp_path,
+        )
+    finally:
+        if previous_value is not None:
+            os.environ["GROQ_API_KEY"] = previous_value
+
+    assert result.returncode == 1
+    assert "GROQ_API_KEY is required for provider=groq" in result.stderr
+
+
+def test_generate_scenarios_command_reads_groq_key_from_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("GROQ_API_KEY=dotenv-test-key\n", encoding="utf-8")
+    cli_module = import_cli_module_from_directory(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+
+    class FakeGroqScenarioLLMProvider:
+        def __init__(self, *, model: str, base_url: str, api_key: str | None = None) -> None:
+            captured["api_key"] = api_key or os.getenv("GROQ_API_KEY")
+            captured["model"] = model
+            captured["base_url"] = base_url
+            self.model = model
+
+        def generate_scenarios(self, _request) -> str:
+            return json.dumps({"scenarios": []})
+
+    monkeypatch.setattr(cli_module, "GroqScenarioLLMProvider", FakeGroqScenarioLLMProvider)
+
+    output_path = tmp_path / "generated_attack_scenarios.yaml"
+    result = cli_module.main(
+        [
+            "generate-scenarios",
+            "--target",
+            "demo-vulnerable-rag",
+            "--count",
+            "1",
+            "--output",
+            str(output_path),
+            "--provider",
+            "groq",
+        ]
+    )
+
+    assert result == 0
+    assert captured["api_key"] == "dotenv-test-key"
+    assert output_path.exists()
+
+
+def test_cli_dotenv_does_not_override_existing_shell_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "shell-wins")
+    (tmp_path / ".env").write_text("GROQ_API_KEY=dotenv-loses\n", encoding="utf-8")
+
+    import_cli_module_from_directory(monkeypatch, tmp_path)
+
+    assert os.environ["GROQ_API_KEY"] == "shell-wins"
+
+
+def test_generate_scenarios_parser_accepts_groq_provider_options() -> None:
+    result = run_cli("generate-scenarios", "--help")
+
+    assert result.returncode == 0
+    assert "--provider {fake,groq}" in result.stdout
+    assert "--model MODEL" in result.stdout
+    assert "--base-url BASE_URL" in result.stdout
+
+
+def test_agent_scan_demo_vulnerable_rag_accepts_generated_scenario_file(tmp_path: Path) -> None:
+    scenario_path = tmp_path / "generated_attack_scenarios.yaml"
+    generate_result = run_cli(
+        "generate-scenarios",
+        "--target",
+        "demo-vulnerable-rag",
+        "--count",
+        "2",
+        "--output",
+        str(scenario_path),
+        "--provider",
+        "fake",
+    )
+    assert generate_result.returncode == 0
+
+    output_dir = tmp_path / "generated-scan"
+    result = run_cli(
+        "agent-scan",
+        "--target",
+        "demo-vulnerable-rag",
+        "--scenario-file",
+        str(scenario_path),
+        "--output-dir",
+        str(output_dir),
+    )
+
+    assert result.returncode == 0
+    assert "Scenarios tested: 2" in result.stdout
+    trajectory_payload = json.loads((output_dir / "trajectory.json").read_text(encoding="utf-8"))
+    assert trajectory_payload["agent_plan"]["scenario_count"] == 2
+    assert trajectory_payload["target_profile"]["scenario_source"] == str(scenario_path)
+    assert trajectory_payload["agent_plan"]["scenario_source"] == str(scenario_path)
