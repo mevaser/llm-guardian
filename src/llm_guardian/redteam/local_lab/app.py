@@ -11,8 +11,10 @@ from llm_guardian.redteam.local_lab.models import (
 )
 from llm_guardian.redteam.local_lab.levels import LEVELS, evaluate_prompt
 from llm_guardian.redteam.local_lab import groq_composer
+from llm_guardian.redteam.local_lab.observability import Redactor
 import logging
 import os
+import json
 
 logger = logging.getLogger("llm_guardian.redteam.local_lab")
 
@@ -40,6 +42,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.get("/")
 def read_root():
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+@app.get("/admin")
+def read_admin():
+    return FileResponse(str(STATIC_DIR / "admin.html"))
 
 @app.get("/api/levels", response_model=List[LevelInfo])
 def get_levels():
@@ -185,6 +191,69 @@ def submit_prompt(request: SubmitRequest):
         groq_http_status=groq_http_status,
         groq_error_type=groq_error_type
     )
+
+RUNS_DIR = Path("reports/redteam/wizard_lab/runs")
+
+@app.get("/api/admin/runs")
+def get_runs():
+    if not RUNS_DIR.exists():
+        return []
+    runs = []
+    for run_dir in RUNS_DIR.iterdir():
+        if run_dir.is_dir():
+            meta_file = run_dir / "run_meta.json"
+            if meta_file.exists():
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    runs.append(json.load(f))
+    runs.sort(key=lambda x: x.get("start_time", ""), reverse=True)
+    return runs
+
+@app.get("/api/admin/runs/{run_id}")
+def get_run(run_id: str):
+    meta_file = RUNS_DIR / run_id / "run_meta.json"
+    if not meta_file.exists():
+        raise HTTPException(status_code=404, detail="Run not found")
+    with open(meta_file, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+from fastapi.responses import PlainTextResponse, JSONResponse
+
+@app.get("/api/admin/runs/{run_id}/{artifact}")
+def get_run_artifact(run_id: str, artifact: str):
+    valid_artifacts = ["events", "decisions", "errors", "trajectory", "report"]
+    if artifact not in valid_artifacts:
+        raise HTTPException(status_code=400, detail="Invalid artifact")
+    
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.exists() or ".." in run_id or "/" in run_id or "\\" in run_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+        
+    if artifact == "report":
+        file_path = run_dir / "report.md"
+        if not file_path.exists():
+            return PlainTextResponse("No report generated.")
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            return PlainTextResponse(Redactor.redact_string(content))
+            
+    elif artifact in ["events", "decisions", "errors"]:
+        file_path = run_dir / f"{artifact}.jsonl"
+        if not file_path.exists():
+            return []
+        lines = []
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    lines.append(json.loads(line))
+        return JSONResponse(Redactor.redact_dict({"data": lines})["data"])
+        
+    elif artifact == "trajectory":
+        file_path = run_dir / "trajectory.json"
+        if not file_path.exists():
+            return []
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return JSONResponse(Redactor.redact_dict({"data": data})["data"])
 
 if __name__ == "__main__":
     uvicorn.run("llm_guardian.redteam.local_lab.app:app", host="127.0.0.1", port=8000, reload=True)
