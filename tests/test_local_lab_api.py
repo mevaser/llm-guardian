@@ -101,6 +101,75 @@ def test_submit_invalid_session():
     )
     assert submit_resp.status_code == 404
 
+def test_submit_prompt_missing_session():
+    response = client.post("/api/session/submit", json={"session_id": "invalid", "prompt": "hello"})
+    assert response.status_code == 404
+
+import tempfile
+import json
+from pathlib import Path
+from llm_guardian.redteam.local_lab.app import RUNS_DIR
+import pytest
+
+@pytest.fixture
+def mock_runs_dir(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        monkeypatch.setattr("llm_guardian.redteam.local_lab.app.RUNS_DIR", tmp_path)
+        yield tmp_path
+
+def test_admin_runs_empty(mock_runs_dir):
+    response = client.get("/api/admin/runs")
+    assert response.status_code == 200
+    assert response.json() == []
+
+def test_admin_runs_list(mock_runs_dir):
+    run_dir = mock_runs_dir / "test_run_123"
+    run_dir.mkdir()
+    meta_path = run_dir / "run_meta.json"
+    meta_data = {"run_id": "test_run_123", "status": "completed"}
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta_data, f)
+        
+    response = client.get("/api/admin/runs")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["run_id"] == "test_run_123"
+    
+def test_admin_run_get(mock_runs_dir):
+    run_dir = mock_runs_dir / "test_run_123"
+    run_dir.mkdir()
+    meta_path = run_dir / "run_meta.json"
+    meta_data = {"run_id": "test_run_123", "status": "completed"}
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta_data, f)
+        
+    response = client.get("/api/admin/runs/test_run_123")
+    assert response.status_code == 200
+    assert response.json()["run_id"] == "test_run_123"
+
+def test_admin_run_get_artifact(mock_runs_dir):
+    run_dir = mock_runs_dir / "test_run_123"
+    run_dir.mkdir()
+    
+    events_path = run_dir / "events.jsonl"
+    with open(events_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"event": "test"}) + "\n")
+        
+    response = client.get("/api/admin/runs/test_run_123/events")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["event"] == "test"
+    
+    report_path = run_dir / "report.md"
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("# Report")
+        
+    response = client.get("/api/admin/runs/test_run_123/report")
+    assert response.status_code == 200
+    assert response.text == "# Report"
+
+
 from unittest.mock import patch
 
 @patch("llm_guardian.redteam.local_lab.app.groq_composer.compose_response")

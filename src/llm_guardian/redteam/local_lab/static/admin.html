@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wizard Lab - Admin Runs</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2, h3 { color: #569cd6; }
+        .container { max-width: 1200px; margin: 0 auto; display: flex; gap: 20px; }
+        .sidebar { width: 300px; background: #252526; padding: 15px; border-radius: 5px; height: 90vh; overflow-y: auto; }
+        .main { flex: 1; background: #252526; padding: 20px; border-radius: 5px; height: 90vh; overflow-y: auto; }
+        .run-item { padding: 10px; margin-bottom: 10px; background: #333; cursor: pointer; border-radius: 4px; }
+        .run-item:hover, .run-item.active { background: #094771; }
+        .status-completed { color: #4CAF50; }
+        .status-running { color: #ff9800; }
+        .card { background: #333; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
+        pre { background: #1e1e1e; padding: 10px; overflow-x: auto; border: 1px solid #444; border-radius: 4px; white-space: pre-wrap; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+        .tab { padding: 8px 15px; background: #333; cursor: pointer; border-radius: 4px; }
+        .tab.active { background: #094771; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #444; padding: 8px; text-align: left; }
+        th { background: #1e1e1e; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="sidebar">
+        <h2>Runs</h2>
+        <div id="runs-list">Loading...</div>
+    </div>
+    <div class="main">
+        <div id="run-details" style="display:none;">
+            <h2 id="run-title">Run Details</h2>
+            <div class="card" id="run-meta"></div>
+            
+            <div class="tabs">
+                <div class="tab active" onclick="showTab(event, 'report')">Report</div>
+                <div class="tab" onclick="showTab(event, 'trajectory')">Trajectory</div>
+                <div class="tab" onclick="showTab(event, 'events')">Events</div>
+                <div class="tab" onclick="showTab(event, 'decisions')">Decisions</div>
+                <div class="tab" onclick="showTab(event, 'errors')">Errors</div>
+            </div>
+            
+            <div id="tab-report" class="tab-content">
+                <pre id="report-content">Loading report...</pre>
+            </div>
+            <div id="tab-trajectory" class="tab-content" style="display:none;">
+                <pre id="trajectory-content"></pre>
+            </div>
+            <div id="tab-events" class="tab-content" style="display:none;">
+                <pre id="events-content"></pre>
+            </div>
+            <div id="tab-decisions" class="tab-content" style="display:none;">
+                <pre id="decisions-content"></pre>
+            </div>
+            <div id="tab-errors" class="tab-content" style="display:none;">
+                <pre id="errors-content"></pre>
+            </div>
+        </div>
+        <div id="empty-state">
+            <h2>Select a run to view details</h2>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentRunId = null;
+
+    async function fetchRuns() {
+        try {
+            const res = await fetch('/api/admin/runs');
+            const runs = await res.json();
+            const list = document.getElementById('runs-list');
+            list.innerHTML = '';
+            
+            if (runs.length === 0) {
+                list.innerHTML = '<div>No runs found.</div>';
+                return;
+            }
+
+            runs.forEach(run => {
+                const el = document.createElement('div');
+                el.className = 'run-item';
+                el.onclick = (e) => loadRun(e, run.run_id);
+                el.innerHTML = `
+                    <div><strong>ID:</strong> ${run.run_id.substring(0,8)}...</div>
+                    <div><strong>Time:</strong> ${new Date(run.start_time).toLocaleString()}</div>
+                    <div><strong>Strategy:</strong> ${run.strategy}</div>
+                    <div><strong>Status:</strong> <span class="status-${run.status}">${run.status}</span></div>
+                    <div><strong>Solved:</strong> ${run.levels_solved}/${run.levels_attempted}</div>
+                `;
+                list.appendChild(el);
+            });
+        } catch (e) {
+            document.getElementById('runs-list').innerText = 'Error loading runs.';
+        }
+    }
+
+    async function loadRun(event, runId) {
+        currentRunId = runId;
+        document.getElementById('empty-state').style.display = 'none';
+        document.getElementById('run-details').style.display = 'block';
+        document.getElementById('run-title').innerText = `Run: ${runId}`;
+        
+        // Update selection styling
+        document.querySelectorAll('.run-item').forEach(el => el.classList.remove('active'));
+        if (event && event.currentTarget) {
+            event.currentTarget.classList.add('active');
+        }
+
+        try {
+            const res = await fetch(`/api/admin/runs/${runId}`);
+            const meta = await res.json();
+            document.getElementById('run-meta').innerHTML = `
+                <p><strong>Start:</strong> ${new Date(meta.start_time).toLocaleString()}</p>
+                <p><strong>Strategy:</strong> ${meta.strategy}</p>
+                <p><strong>Attempted:</strong> ${meta.levels_attempted} | <strong>Solved:</strong> ${meta.levels_solved} | <strong>Failed:</strong> ${meta.levels_failed}</p>
+            `;
+            
+            // Load current tab
+            const activeTabElement = document.querySelector('.tab.active');
+            if (activeTabElement) {
+                const activeTab = activeTabElement.innerText.toLowerCase();
+                await loadTabContent(runId, activeTab);
+            }
+        } catch(e) {
+            console.error(e);
+        }
+    }
+
+    async function loadTabContent(runId, artifact) {
+        const el = document.getElementById(`${artifact}-content`);
+        el.innerText = 'Loading...';
+        try {
+            const res = await fetch(`/api/admin/runs/${runId}/${artifact}`);
+            if (artifact === 'report') {
+                const text = await res.text();
+                el.innerText = text;
+            } else {
+                const json = await res.json();
+                el.innerText = JSON.stringify(json, null, 2);
+            }
+        } catch (e) {
+            el.innerText = `Error loading ${artifact}`;
+        }
+    }
+
+    function showTab(event, tabName) {
+        document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+        document.getElementById(`tab-${tabName}`).style.display = 'block';
+        
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        if (event && event.currentTarget) {
+            event.currentTarget.classList.add('active');
+        }
+
+        if (currentRunId) {
+            loadTabContent(currentRunId, tabName);
+        }
+    }
+
+    fetchRuns();
+</script>
+
+</body>
+</html>
