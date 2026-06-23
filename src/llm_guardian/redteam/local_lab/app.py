@@ -216,14 +216,9 @@ def run_agent_in_background(levels_str: str, strategy: str, response_mode: str, 
             response_mode=response_mode,
             max_attempts=max_attempts,
             delay_ms=delay_ms,
-            base_dir=str(RUNS_DIR)
+            base_dir=str(RUNS_DIR),
+            run_id=run_id
         )
-        # Override the logger's auto-generated run_id
-        runner.logger.run_id = run_id
-        runner.logger.run_dir = runner.logger.base_dir / run_id
-        runner.logger.run_dir.mkdir(parents=True, exist_ok=True)
-        runner.logger.meta["run_id"] = run_id
-        runner.logger._write_meta()
         
         runner.run_all(levels)
     except Exception as e:
@@ -278,13 +273,28 @@ def start_run(req: RunStartRequest, background_tasks: BackgroundTasks):
         "message": "Run started in background."
     }
 
+import datetime
+
+def _check_stale(meta: dict) -> dict:
+    if meta.get("status") == "running" and meta.get("levels_attempted", 0) == 0:
+        start_time_str = meta.get("start_time")
+        if start_time_str:
+            try:
+                start_time = datetime.datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                now = datetime.datetime.now(datetime.timezone.utc)
+                if (now - start_time).total_seconds() > 60:
+                    meta["status"] = "stale"
+            except Exception:
+                pass
+    return meta
+
 @app.get("/api/admin/runs/{run_id}/status")
 def get_run_status(run_id: str):
     meta_file = RUNS_DIR / run_id / "run_meta.json"
     if not meta_file.exists():
         raise HTTPException(status_code=404, detail="Run not found")
     with open(meta_file, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return _check_stale(json.load(f))
 
 @app.get("/api/admin/runs")
 def get_runs():
@@ -296,7 +306,7 @@ def get_runs():
             meta_file = run_dir / "run_meta.json"
             if meta_file.exists():
                 with open(meta_file, "r", encoding="utf-8") as f:
-                    runs.append(json.load(f))
+                    runs.append(_check_stale(json.load(f)))
     runs.sort(key=lambda x: x.get("start_time", ""), reverse=True)
     return runs
 
@@ -306,7 +316,7 @@ def get_run(run_id: str):
     if not meta_file.exists():
         raise HTTPException(status_code=404, detail="Run not found")
     with open(meta_file, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return _check_stale(json.load(f))
 
 from fastapi.responses import PlainTextResponse, JSONResponse
 
