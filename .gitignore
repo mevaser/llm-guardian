@@ -43,3 +43,6 @@ tmp_report.json
 Thumbs.db
 .idea/
 .vscode/
+
+
+*.zip
