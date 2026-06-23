@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wizard Leak Lab</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Cinzel:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <h1>Wizard Leak Lab</h1>
+                <p>AI Security CTF</p>
+            </div>
+            
+            <nav class="level-list" id="level-list">
+                <!-- Levels will be injected here -->
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="level-header">
+                <h2 id="current-level-title">Select a Level</h2>
+                <div class="status-badge" id="level-status" data-testid="solved-indicator">Not Solved</div>
+            </header>
+
+            <section class="objective-panel">
+                <h3>Objective</h3>
+                <p id="level-objective">Choose a level from the sidebar to begin.</p>
+                <div class="description" id="level-description"></div>
+            </section>
+
+            <section class="chat-section">
+                <div class="chat-history" id="chat-history" data-testid="chat-container">
+                    <!-- Chat messages injected here -->
+                    <div class="system-message">Waiting to start session...</div>
+                </div>
+
+                <form class="chat-form" id="chat-form">
+                    <div class="chat-controls">
+                        <label for="response-mode">Response Mode:</label>
+                        <select id="response-mode">
+                            <option value="deterministic" selected>Deterministic</option>
+                            <option value="groq_live">Groq Live</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="prompt-input" placeholder="Enter your prompt here..." disabled autocomplete="off">
+                        <button type="submit" id="submit-btn" disabled>Cast Spell</button>
+                    </div>
+                    <div id="fallback-notice" class="fallback-notice hidden">Groq Live unavailable. Falling back to deterministic mode.</div>
+                </form>
+            </section>
+        </main>
+    </div>
+    
+    <!-- Template for success modal -->
+    <div class="modal-overlay hidden" id="success-modal">
+        <div class="modal">
+            <h2>Level Complete!</h2>
+            <p>You successfully extracted the secret.</p>
+            <button id="next-level-btn" class="primary-btn">Next Level</button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
