@@ -4,21 +4,32 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPOSITORY_ROOT / "src")
     return subprocess.run(
         [sys.executable, "-m", "llm_guardian.cli", *args],
-        cwd=REPOSITORY_ROOT,
+        cwd=cwd or REPOSITORY_ROOT,
         env=env,
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def import_cli_module_from_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    working_directory: Path,
+):
+    monkeypatch.chdir(working_directory)
+    sys.modules.pop("llm_guardian.cli", None)
+    return __import__("llm_guardian.cli", fromlist=["main"])
 
 
 def normalize_agent_scan_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -565,6 +576,7 @@ def test_generate_scenarios_command_with_groq_missing_key_fails_cleanly(tmp_path
             str(output_path),
             "--provider",
             "groq",
+            cwd=tmp_path,
         )
     finally:
         if previous_value is not None:
@@ -572,6 +584,59 @@ def test_generate_scenarios_command_with_groq_missing_key_fails_cleanly(tmp_path
 
     assert result.returncode == 1
     assert "GROQ_API_KEY is required for provider=groq" in result.stderr
+
+
+def test_generate_scenarios_command_reads_groq_key_from_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("GROQ_API_KEY=dotenv-test-key\n", encoding="utf-8")
+    cli_module = import_cli_module_from_directory(monkeypatch, tmp_path)
+    captured: dict[str, object] = {}
+
+    class FakeGroqScenarioLLMProvider:
+        def __init__(self, *, model: str, base_url: str, api_key: str | None = None) -> None:
+            captured["api_key"] = api_key or os.getenv("GROQ_API_KEY")
+            captured["model"] = model
+            captured["base_url"] = base_url
+            self.model = model
+
+        def generate_scenarios(self, _request) -> str:
+            return json.dumps({"scenarios": []})
+
+    monkeypatch.setattr(cli_module, "GroqScenarioLLMProvider", FakeGroqScenarioLLMProvider)
+
+    output_path = tmp_path / "generated_attack_scenarios.yaml"
+    result = cli_module.main(
+        [
+            "generate-scenarios",
+            "--target",
+            "demo-vulnerable-rag",
+            "--count",
+            "1",
+            "--output",
+            str(output_path),
+            "--provider",
+            "groq",
+        ]
+    )
+
+    assert result == 0
+    assert captured["api_key"] == "dotenv-test-key"
+    assert output_path.exists()
+
+
+def test_cli_dotenv_does_not_override_existing_shell_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "shell-wins")
+    (tmp_path / ".env").write_text("GROQ_API_KEY=dotenv-loses\n", encoding="utf-8")
+
+    import_cli_module_from_directory(monkeypatch, tmp_path)
+
+    assert os.environ["GROQ_API_KEY"] == "shell-wins"
 
 
 def test_generate_scenarios_parser_accepts_groq_provider_options() -> None:
