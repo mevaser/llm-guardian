@@ -23,6 +23,7 @@ dependencies = [
 dev = [
     "pytest>=8.2",
     "ruff>=0.5",
+    "httpx2",
 ]
 [project.scripts]
 llm-guardian = "llm_guardian.cli:app"
