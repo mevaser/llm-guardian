@@ -80,6 +80,8 @@ def generate_markdown_report(scan_result: SecurityScanResult, output_path: Path)
             )
         if scan_result.agent_plan.scenario_provider is not None:
             lines.append(f"- scenario_provider: {scan_result.agent_plan.scenario_provider}")
+        if scan_result.agent_plan.scenario_model is not None:
+            lines.append(f"- scenario_model: {scan_result.agent_plan.scenario_model}")
 
     lines.extend(["", "## Agent Execution Trace", ""])
     if scan_result.agent_trace:

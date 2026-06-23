@@ -6,6 +6,7 @@ import types
 from pathlib import Path
 
 import pytest
+import yaml
 
 from llm_guardian.models import SecurityScanResult
 
@@ -107,9 +108,13 @@ def test_run_streamlit_scenario_generation_uses_fake_provider_and_writes_yaml(
     assert len(result.accepted_scenarios) == 2
     assert result.rejected_scenarios == []
     assert output_path.exists()
-    output_text = output_path.read_text(encoding="utf-8")
-    assert "scenarios:" in output_text
-    assert "generated-" in output_text
+    payload = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    assert payload["metadata"]["target_name"] == "demo-vulnerable-rag"
+    assert payload["metadata"]["provider"] == "fake"
+    assert payload["metadata"]["model"] == "fake-deterministic"
+    assert payload["metadata"]["requested_count"] == 2
+    assert payload["metadata"]["accepted_count"] == 2
+    assert "generated-" in payload["scenarios"][0]["id"]
 
 
 def test_run_streamlit_scenario_generation_requires_groq_key(

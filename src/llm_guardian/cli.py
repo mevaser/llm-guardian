@@ -23,6 +23,7 @@ from llm_guardian.scenario_generation import (
     FakeScenarioLLMProvider,
     GroqScenarioLLMProvider,
     ProviderConfigurationError,
+    build_target_profile_summary,
     generate_attack_scenarios,
     write_generated_scenarios_yaml,
 )
@@ -273,7 +274,6 @@ def _run_demo_agent_scan(
         target_name=target,
         output_dir=output_dir,
         scenario_file=scenario_file,
-        scenario_provider="fake" if scenario_file is not None else None,
     )
     resolved_output_dir = Path(output_dir)
     trajectory_path = resolved_output_dir / "trajectory.json"
@@ -370,9 +370,7 @@ def generate_scenarios(
     try:
         result = generate_attack_scenarios(
             target_name=target,
-            target_profile_summary=(
-                "Local intentionally vulnerable demo target with deterministic grading and offline execution."
-            ),
+            target_profile_summary=build_target_profile_summary(target),
             provider=scenario_provider,
             count=count,
         )
@@ -380,7 +378,17 @@ def generate_scenarios(
         print(str(exc), file=sys.stderr)
         return 1
 
-    write_generated_scenarios_yaml(result.accepted_scenarios, output)
+    write_generated_scenarios_yaml(
+        result.accepted_scenarios,
+        output,
+        metadata={
+            "target_name": target,
+            "provider": provider,
+            "model": provider_model,
+            "requested_count": count,
+            "accepted_count": len(result.accepted_scenarios),
+        },
+    )
 
     print("Scenario generation complete")
     print(f"Target: {target}")

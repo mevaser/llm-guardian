@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from llm_guardian.attacks.loader import load_attack_scenarios
+from llm_guardian.attacks.loader import load_attack_scenario_metadata, load_attack_scenarios
 from llm_guardian.config import DEFAULT_ATTACK_SCENARIOS_PATH, REPOSITORY_ROOT
 from llm_guardian.evaluators import grade_result
 from llm_guardian.models import (
@@ -344,6 +344,7 @@ class SecurityScanAgent:
         scenario_provider: str | None = None,
     ) -> SecurityScanResult:
         resolved_scenario_file = Path(scenario_file) if scenario_file is not None else None
+        scenario_metadata = self._load_scenario_metadata(resolved_scenario_file)
         scenarios = self._load_scenarios(resolved_scenario_file)
         agent_trace: list[AgentTraceStep] = []
         next_step = 1
@@ -351,7 +352,16 @@ class SecurityScanAgent:
             target_name=target_name,
             scenarios=scenarios,
             scenario_file=resolved_scenario_file,
-            scenario_provider=scenario_provider,
+            scenario_provider=self._resolve_scenario_provider(
+                scenario_file=resolved_scenario_file,
+                scenario_metadata=scenario_metadata,
+                explicit_scenario_provider=scenario_provider,
+            ),
+            scenario_model=self._resolve_scenario_model(scenario_metadata),
+            generated_scenario_count=self._resolve_generated_scenario_count(
+                scenarios=scenarios,
+                scenario_metadata=scenario_metadata,
+            ),
         )
         scenario_source_path = resolved_scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH
         agent_trace.append(
@@ -432,7 +442,8 @@ class SecurityScanAgent:
             target_profile=self._build_target_profile(
                 target_name,
                 scenario_file=resolved_scenario_file,
-                scenario_provider=scenario_provider,
+                scenario_provider=agent_plan.scenario_provider,
+                scenario_model=agent_plan.scenario_model,
                 generated_scenario_count=agent_plan.generated_scenario_count,
             ),
             agent_plan=agent_plan,
@@ -458,6 +469,11 @@ class SecurityScanAgent:
 
     def _load_scenarios(self, scenario_file: Path | None = None):
         return load_attack_scenarios(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH)
+
+    def _load_scenario_metadata(self, scenario_file: Path | None = None) -> dict[str, object]:
+        if scenario_file is None:
+            return {}
+        return load_attack_scenario_metadata(scenario_file)
 
     def _resolve_target(self, target_name: str):
         if target_name != self._DEMO_TARGET_NAME:
@@ -492,6 +508,7 @@ class SecurityScanAgent:
         *,
         scenario_file: Path | None = None,
         scenario_provider: str | None = None,
+        scenario_model: str | None = None,
         generated_scenario_count: int | None = None,
     ) -> dict[str, str | bool | int]:
         profile: dict[str, str | bool | int] = {
@@ -503,6 +520,8 @@ class SecurityScanAgent:
         }
         if scenario_provider is not None:
             profile["scenario_provider"] = scenario_provider
+        if scenario_model is not None:
+            profile["scenario_model"] = scenario_model
         if generated_scenario_count is not None:
             profile["generated_scenario_count"] = generated_scenario_count
         return profile
@@ -514,12 +533,11 @@ class SecurityScanAgent:
         scenarios,
         scenario_file: Path | None = None,
         scenario_provider: str | None = None,
+        scenario_model: str | None = None,
+        generated_scenario_count: int | None = None,
     ) -> AgentPlan:
         selected_scenario_ids = [scenario.id for scenario in scenarios]
         resolved_scenario_source = str(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH)
-        generated_scenario_count = (
-            len([scenario for scenario in scenarios if scenario.id.startswith("generated-")]) or None
-        )
         return AgentPlan(
             target_name=target_name,
             scenario_count=len(selected_scenario_ids),
@@ -527,6 +545,7 @@ class SecurityScanAgent:
             scenario_source=resolved_scenario_source,
             generated_scenario_count=generated_scenario_count,
             scenario_provider=scenario_provider,
+            scenario_model=scenario_model,
             rationale=(
                 "Run every deterministic demo scenario to measure prompt-injection, "
                 "tool-use, secret-handling, and benign-response behavior in one stable scan."
@@ -596,3 +615,40 @@ class SecurityScanAgent:
                 )
             )
         return adaptive_probes
+
+    @staticmethod
+    def _resolve_scenario_provider(
+        *,
+        scenario_file: Path | None,
+        scenario_metadata: dict[str, object],
+        explicit_scenario_provider: str | None,
+    ) -> str | None:
+        provider = scenario_metadata.get("provider")
+        if isinstance(provider, str) and provider.strip():
+            return provider.strip()
+        if explicit_scenario_provider is not None and explicit_scenario_provider.strip():
+            return explicit_scenario_provider.strip()
+        if scenario_file is not None:
+            return "external"
+        return None
+
+    @staticmethod
+    def _resolve_scenario_model(scenario_metadata: dict[str, object]) -> str | None:
+        model = scenario_metadata.get("model")
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+        return None
+
+    @staticmethod
+    def _resolve_generated_scenario_count(
+        *,
+        scenarios,
+        scenario_metadata: dict[str, object],
+    ) -> int | None:
+        accepted_count = scenario_metadata.get("accepted_count")
+        if isinstance(accepted_count, int):
+            return accepted_count
+        if isinstance(accepted_count, str) and accepted_count.isdigit():
+            return int(accepted_count)
+        generated_count = len([scenario for scenario in scenarios if scenario.id.startswith("generated-")])
+        return generated_count or None

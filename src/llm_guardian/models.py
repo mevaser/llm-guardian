@@ -210,6 +210,7 @@ class AgentPlan(StrictBaseModel):
     scenario_source: str | None = None
     generated_scenario_count: int | None = None
     scenario_provider: str | None = None
+    scenario_model: str | None = None
     rationale: str
     execution_strategy: str
 
@@ -220,7 +221,7 @@ class AgentPlan(StrictBaseModel):
             raise ValueError("must be a non-empty string")
         return value
 
-    @field_validator("scenario_source", "scenario_provider")
+    @field_validator("scenario_source", "scenario_provider", "scenario_model")
     @classmethod
     def validate_optional_plan_text(cls, value: str | None) -> str | None:
         if value is None:

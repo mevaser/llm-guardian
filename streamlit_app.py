@@ -10,6 +10,7 @@ from llm_guardian.scenario_generation import (
     FakeScenarioLLMProvider,
     GroqScenarioLLMProvider,
     ProviderConfigurationError,
+    build_target_profile_summary,
     generate_attack_scenarios,
     write_generated_scenarios_yaml,
 )
@@ -54,13 +55,22 @@ def run_streamlit_scenario_generation(
 
     result = generate_attack_scenarios(
         target_name=target_name,
-        target_profile_summary=(
-            "Local intentionally vulnerable demo target with deterministic grading and offline execution."
-        ),
+        target_profile_summary=build_target_profile_summary(target_name),
         provider=provider,
         count=count,
     )
-    write_generated_scenarios_yaml(result.accepted_scenarios, output_path)
+    provider_model = "fake-deterministic" if provider_name == "fake" else provider.model
+    write_generated_scenarios_yaml(
+        result.accepted_scenarios,
+        output_path,
+        metadata={
+            "target_name": target_name,
+            "provider": provider_name,
+            "model": provider_model,
+            "requested_count": count,
+            "accepted_count": len(result.accepted_scenarios),
+        },
+    )
     return result
 
 
@@ -78,7 +88,6 @@ def run_streamlit_scan(
         target_name=target_name,
         output_dir=output_dir,
         scenario_file=scenario_file,
-        scenario_provider="fake",
     )
 
 
@@ -245,6 +254,9 @@ def main() -> None:
 
         generated_result = st.session_state["generated_scenarios_result"]
         if generated_result is not None:
+            st.caption(
+                "Generated scenarios are target-aware for the selected demo target and can be run from the Security Scan tab."
+            )
             st.subheader("Accepted Scenarios")
             st.dataframe(
                 [scenario.model_dump(mode="python") for scenario in generated_result.accepted_scenarios],
@@ -341,6 +353,8 @@ def main() -> None:
                     )
                 if scan_result.agent_plan.scenario_provider is not None:
                     st.write(f"**scenario_provider:** {scan_result.agent_plan.scenario_provider}")
+                if scan_result.agent_plan.scenario_model is not None:
+                    st.write(f"**scenario_model:** {scan_result.agent_plan.scenario_model}")
                 st.write(f"**rationale:** {scan_result.agent_plan.rationale}")
                 st.write(
                     f"**execution_strategy:** {scan_result.agent_plan.execution_strategy}"

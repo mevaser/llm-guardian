@@ -1,6 +1,7 @@
 """Scenario generation helpers for optional LLM-assisted attack creation."""
 
 from llm_guardian.scenario_generation.generator import (
+    build_target_profile_summary,
     generate_attack_scenarios,
     write_generated_scenarios_yaml,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "GroqScenarioLLMProvider",
     "ProviderConfigurationError",
     "ScenarioLLMProvider",
+    "build_target_profile_summary",
     "generate_attack_scenarios",
     "write_generated_scenarios_yaml",
 ]
