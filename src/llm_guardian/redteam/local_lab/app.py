@@ -197,12 +197,14 @@ RUNS_DIR = Path("reports/redteam/wizard_lab/runs")
 
 class RunStartRequest(BaseModel):
     levels: str = "1-8"
-    strategy: str = "scripted"
+    strategy: str = "autonomous"
     response_mode: str = "deterministic"
     max_attempts: int = 8
     delay_ms: int = 1000
+    planner_model: str = "llama-3.1-8b-instant"
+    planner_temperature: float = 0.7
 
-def run_agent_in_background(levels_str: str, strategy: str, response_mode: str, max_attempts: int, delay_ms: int, run_id: str):
+def run_agent_in_background(levels_str: str, strategy: str, response_mode: str, max_attempts: int, delay_ms: int, run_id: str, planner_model: str, planner_temperature: float):
     logger.info(f"Starting background agent run {run_id}")
     try:
         from llm_guardian.redteam.local_lab.attack_agent import AttackRunner, parse_levels
@@ -217,7 +219,9 @@ def run_agent_in_background(levels_str: str, strategy: str, response_mode: str, 
             max_attempts=max_attempts,
             delay_ms=delay_ms,
             base_dir=str(RUNS_DIR),
-            run_id=run_id
+            run_id=run_id,
+            planner_model=planner_model,
+            planner_temperature=planner_temperature
         )
         
         runner.run_all(levels)
@@ -237,6 +241,9 @@ def run_agent_in_background(levels_str: str, strategy: str, response_mode: str, 
 
 @app.post("/api/admin/runs/start")
 def start_run(req: RunStartRequest, background_tasks: BackgroundTasks):
+    if req.strategy == "autonomous" and not groq_key_present:
+        raise HTTPException(status_code=400, detail="Autonomous mode requires GROQ_API_KEY. Scripted baseline is still available.")
+        
     run_id = str(uuid.uuid4())
     run_dir = RUNS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -263,7 +270,9 @@ def start_run(req: RunStartRequest, background_tasks: BackgroundTasks):
         req.response_mode,
         req.max_attempts,
         req.delay_ms,
-        run_id
+        run_id,
+        req.planner_model,
+        req.planner_temperature
     )
     
     return {

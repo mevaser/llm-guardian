@@ -67,7 +67,14 @@ class ObservabilityLogger:
             "strategy": "unknown",
             "levels_attempted": 0,
             "levels_solved": 0,
-            "levels_failed": 0
+            "levels_failed": 0,
+            "total_attempts": 0,
+            "unique_prompt_count": 0,
+            "duplicate_prompt_count": 0,
+            "adaptation_count": 0,
+            "refused_count": 0,
+            "filtered_count": 0,
+            "irrelevant_count": 0
         }
         self.trajectory: List[Dict[str, Any]] = []
         
@@ -158,7 +165,24 @@ class ObservabilityLogger:
         md += f"**Levels Solved:** {meta.get('levels_solved')}\n"
         md += f"**Levels Failed:** {meta.get('levels_failed')}\n\n"
         
-        md += "## Summary\n\n"
+        if meta.get("strategy") == "autonomous":
+            md += "## Trajectory Metrics\n\n"
+            md += f"- **Total Attempts:** {meta.get('total_attempts', 0)}\n"
+            md += f"- **Unique Prompts:** {meta.get('unique_prompt_count', 0)}\n"
+            md += f"- **Duplicate Prompts Blocked:** {meta.get('duplicate_prompt_count', 0)}\n"
+            md += f"- **Adaptations Triggered:** {meta.get('adaptation_count', 0)}\n"
+            md += f"- **Refusals Encountered:** {meta.get('refused_count', 0)}\n"
+            md += f"- **Filters Triggered:** {meta.get('filtered_count', 0)}\n"
+            md += f"- **Irrelevant Responses:** {meta.get('irrelevant_count', 0)}\n\n"
+        
+        # Pull events to build detailed report
+        events = []
+        events_path = self.run_dir / "events.jsonl"
+        if events_path.exists():
+            with open(events_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        events.append(json.loads(line))
         
         # Analyze trajectory to summarize level by level
         level_status = {}
@@ -170,6 +194,7 @@ class ObservabilityLogger:
             if attempt["solved"]:
                 level_status[lvl]["solved"] = True
                 
+        md += "## Summary\n\n"
         md += "| Level | Attempts | Solved |\n"
         md += "|---|---|---|\n"
         for lvl in sorted(level_status.keys()):
@@ -177,6 +202,50 @@ class ObservabilityLogger:
             solved_str = "✅ Yes" if stats["solved"] else "❌ No"
             md += f"| Level {lvl} | {stats['attempts']} | {solved_str} |\n"
             
+        if meta.get("strategy") == "autonomous":
+            md += "\n## Autonomous Run Details\n\n"
+            md += "> [!NOTE]\n"
+            md += "> Rationale summaries below are model-generated explanations from the planner, not hidden chain-of-thought.\n\n"
+            
+            # Group events by level
+            for lvl in sorted(level_status.keys()):
+                md += f"### Level {lvl}\n"
+                lvl_events = [e for e in events if e.get("level_id") == lvl]
+                
+                # Extract planner details from first decision
+                first_decision = next((e for e in lvl_events if e.get("event_type") == "agent_decision"), None)
+                if first_decision and first_decision.get("payload", {}).get("planner_model"):
+                    md += f"- **Planner Model**: `{first_decision['payload']['planner_model']}`\n"
+                    
+                md += "\n#### Attempts\n\n"
+                
+                for attempt_num in range(1, level_status[lvl]["attempts"] + 1):
+                    md += f"**Attempt {attempt_num}**\n"
+                    
+                    decision = next((e for e in lvl_events if e.get("event_type") == "agent_decision" and e.get("payload", {}).get("turn") == attempt_num), None)
+                    wizard_resp = next((e for e in lvl_events if e.get("event_type") == "wizard_response" and e.get("payload", {}).get("turn") == attempt_num), None)
+                    
+                    if decision:
+                        payload = decision.get("payload", {})
+                        if payload.get("strategy_name"):
+                            md += f"- **Strategy:** {payload['strategy_name']}\n"
+                        if payload.get("rationale_summary"):
+                            md += f"- **Rationale:** {payload['rationale_summary']}\n"
+                        if payload.get("selected_prompt"):
+                            md += f"- **Prompt:** `{payload['selected_prompt']}`\n"
+                        if payload.get("duplicate_prompt_detected"):
+                            md += f"- **Duplicate Blocked:** {payload.get('rejected_prompt_reason')}\n"
+                        if payload.get("adaptation_reason"):
+                            md += f"- **Adaptation Reason:** {payload['adaptation_reason']}\n"
+                            
+                    if wizard_resp:
+                        w_payload = wizard_resp.get("payload", {})
+                        md += f"- **Outcome:** {w_payload.get('outcome_type', 'unknown')}\n"
+                        md += f"- **Response:** {w_payload.get('response', '')}\n"
+                        if w_payload.get("solved"):
+                            md += "- **Result:** ✅ Solved\n"
+                    md += "\n"
+        
         md += "\n## Notable Errors\n\n"
         errors_path = self.run_dir / "errors.jsonl"
         if errors_path.exists():

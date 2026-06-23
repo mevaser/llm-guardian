@@ -87,7 +87,7 @@
 <div class="container">
     <div class="sidebar">
         <div class="card">
-            <h3>Run Scripted Agent</h3>
+            <h3>Start Run</h3>
             <div class="form-group">
                 <label>Levels to Attempt</label>
                 <input type="text" id="run-levels" value="1-8">
@@ -105,11 +105,12 @@
             </div>
             <div class="form-group">
                 <label>Strategy</label>
-                <select id="run-strategy" disabled>
-                    <option value="scripted">Scripted</option>
+                <select id="run-strategy">
+                    <option value="autonomous" selected>Autonomous Planner</option>
+                    <option value="scripted">Scripted Baseline</option>
                 </select>
             </div>
-            <button class="btn" id="btn-run" style="width: 100%; margin-top: 10px;" onclick="startRun()">Run Live Scripted Demo</button>
+            <button class="btn" id="btn-run" style="width: 100%; margin-top: 10px;" onclick="startRun()">Start Agent Run</button>
         </div>
         
         <div class="run-list">
@@ -159,7 +160,15 @@
                 <pre id="decisions-content"></pre>
             </div>
             <div id="tab-events" class="tab-content" style="display:none;">
-                <button class="btn" onclick="refreshTab('events')" style="margin-bottom: 10px;">Refresh Timeline</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <button class="btn" onclick="refreshTab('events')">Refresh Timeline</button>
+                    <div>
+                        <label style="cursor:pointer; margin-right:10px;">
+                            <input type="checkbox" id="follow-live" checked> Follow Live
+                        </label>
+                        <button class="btn" id="btn-jump-latest" onclick="jumpToLatest()" style="display:none; padding:5px 10px; font-size:0.9em;">Jump to Latest</button>
+                    </div>
+                </div>
                 <div id="events-content" style="display: flex; flex-direction: column; gap: 10px;"></div>
             </div>
             <div id="tab-errors" class="tab-content" style="display:none;">
@@ -173,6 +182,30 @@
 <script>
     let currentRunId = null;
     let pollInterval = null;
+
+    const mainContainer = document.querySelector('.main');
+    mainContainer.addEventListener('scroll', () => {
+        const followLive = document.getElementById('follow-live');
+        if (followLive && followLive.checked) {
+            if (mainContainer.scrollTop + mainContainer.clientHeight < mainContainer.scrollHeight - 20) {
+                followLive.checked = false;
+                document.getElementById('btn-jump-latest').style.display = 'inline-block';
+            }
+        }
+    });
+
+    document.getElementById('follow-live')?.addEventListener('change', (e) => {
+        if (e.target.checked) jumpToLatest();
+        else document.getElementById('btn-jump-latest').style.display = 'inline-block';
+    });
+
+    function jumpToLatest() {
+        const followLive = document.getElementById('follow-live');
+        if (followLive) followLive.checked = true;
+        const btnJump = document.getElementById('btn-jump-latest');
+        if (btnJump) btnJump.style.display = 'none';
+        mainContainer.scrollTop = mainContainer.scrollHeight;
+    }
 
     async function fetchRuns(selectRunId = null) {
         try {
@@ -261,7 +294,7 @@
         } catch (e) {
             alert(e.message);
             btn.disabled = false;
-            btn.innerText = 'Run Live Scripted Demo';
+            btn.innerText = 'Start Agent Run';
         }
     }
 
@@ -279,7 +312,7 @@
             if (statusData.status === 'completed' || statusData.status === 'failed' || statusData.status === 'stale') {
                 clearInterval(pollInterval);
                 document.getElementById('btn-run').disabled = false;
-                document.getElementById('btn-run').innerText = 'Run Live Scripted Demo';
+                document.getElementById('btn-run').innerText = 'Start Agent Run';
                 fetchRuns(runId);
             }
         } catch (e) {
@@ -334,7 +367,7 @@
                 }, 1000);
             } else {
                 document.getElementById('btn-run').disabled = false;
-                document.getElementById('btn-run').innerText = 'Run Live Scripted Demo';
+                document.getElementById('btn-run').innerText = 'Start Agent Run';
             }
             
             // Load current tab
@@ -395,10 +428,14 @@
             let contentHtml = '';
             
             if (ev.event_type === 'agent_decision') {
+                let strategyText = ev.strategy_name || 'N/A';
+                let reasonText = ev.rationale_summary || ev.decision_reason || 'N/A';
+                let confidenceStr = ev.confidence !== undefined ? ` | <strong>Confidence:</strong> ${(ev.confidence * 100).toFixed(0)}%` : '';
+                let expectedBypassStr = ev.expected_bypass_type ? ` | <strong>Bypass:</strong> ${ev.expected_bypass_type}` : '';
                 contentHtml = `
                     <div style="margin-top:10px;">
-                        <div><strong>Strategy:</strong> ${ev.strategy_name || 'N/A'}</div>
-                        <div><strong>Reason:</strong> ${ev.decision_reason || 'N/A'}</div>
+                        <div><strong>Strategy:</strong> ${strategyText}${confidenceStr}${expectedBypassStr}</div>
+                        <div><strong>Rationale:</strong> ${reasonText}</div>
                         <div style="margin-top:5px; background:#1e1e1e; padding:10px; border-radius:4px; font-family:monospace;">${ev.selected_prompt || ''}</div>
                     </div>`;
             } else if (ev.event_type === 'prompt_submitted') {
@@ -430,10 +467,16 @@
             `;
         });
         
+        const followLive = document.getElementById('follow-live') ? document.getElementById('follow-live').checked : true;
+        const prevScrollTop = mainContainer.scrollTop;
+        
         el.innerHTML = html;
-        // Scroll to bottom
-        const container = document.querySelector('.main');
-        container.scrollTop = container.scrollHeight;
+        
+        if (followLive) {
+            mainContainer.scrollTop = mainContainer.scrollHeight;
+        } else {
+            mainContainer.scrollTop = prevScrollTop;
+        }
     }
 
     function showTab(event, tabName) {
