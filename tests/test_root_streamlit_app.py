@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 import types
 from pathlib import Path
@@ -118,9 +119,16 @@ def test_run_streamlit_scenario_generation_uses_fake_provider_and_writes_yaml(
 
 
 def test_run_streamlit_scenario_generation_requires_groq_key(
-    root_streamlit_app_module,
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    fake_streamlit = types.ModuleType("streamlit")
+    monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
+    monkeypatch.chdir(tmp_path)
+    sys.modules.pop("streamlit_app", None)
+    root_streamlit_app_module = importlib.import_module("streamlit_app")
+
     with pytest.raises(ValueError, match="GROQ_API_KEY is required for provider=groq"):
         root_streamlit_app_module.run_streamlit_scenario_generation(
             target_name="demo-vulnerable-rag",
@@ -129,3 +137,19 @@ def test_run_streamlit_scenario_generation_requires_groq_key(
             output_path=tmp_path / "generated_attack_scenarios.yaml",
             api_key="",
         )
+
+
+def test_root_streamlit_app_import_loads_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("GROQ_API_KEY=streamlit-dotenv-key\n", encoding="utf-8")
+    fake_streamlit = types.ModuleType("streamlit")
+    monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
+    monkeypatch.chdir(tmp_path)
+    sys.modules.pop("streamlit_app", None)
+
+    importlib.import_module("streamlit_app")
+
+    assert os.environ["GROQ_API_KEY"] == "streamlit-dotenv-key"

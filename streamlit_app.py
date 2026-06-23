@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from llm_guardian.env import load_local_dotenv
 from llm_guardian.models import SecurityScanResult, Severity
 from llm_guardian.scenario_generation import (
     FakeScenarioLLMProvider,
@@ -15,6 +16,8 @@ from llm_guardian.scenario_generation import (
     write_generated_scenarios_yaml,
 )
 from llm_guardian.security_agent.agent import SecurityScanAgent
+
+load_local_dotenv()
 
 try:
     import streamlit as st
