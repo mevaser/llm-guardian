@@ -146,11 +146,14 @@ class AutonomousStrategy:
 
                 # Trigger replan
                 state.previous_attempts.append(PreviousAttempt(
+                    attempt_number=state.current_turn,
                     prompt=decision.selected_prompt,
                     response=controller_msg,
                     outcome_type="filtered",
                     solved=False,
-                    observation_summary="rejected"
+                    observation_summary="rejected",
+                    selected_tactic=decision.strategy_name,
+                    is_duplicate=is_dup
                 ))
                 decision, error = self.planner.propose_next_action(state)
                 # Ensure the fake attempt is removed or not submitted to the wizard
@@ -371,6 +374,7 @@ class AttackRunner:
             observation_summary = classify_observation(response, submit_resp.get("outcome_type", "unknown"), solved)
             outcome_type = submit_resp.get("outcome_type", "unknown")
             
+            normalized_hint = None
             # Detect hint and force next tactic
             if self.strategy_name == "autonomous" and not solved:
                 normalized_hint = normalize_hint_type(outcome_type)
@@ -395,11 +399,16 @@ class AttackRunner:
                         state.tactics_already_tried.append(decision_info["strategy_name"])
             
             previous_attempts.append(PreviousAttempt(
+                attempt_number=attempt_num,
                 prompt=prompt,
                 response=response,
                 outcome_type=outcome_type,
                 solved=solved,
-                observation_summary=observation_summary
+                observation_summary=observation_summary,
+                detected_hint_type=normalized_hint,
+                selected_tactic=decision_info.get("strategy_name") if decision_info else None,
+                error_category=submit_resp.get("fallback_reason") or submit_resp.get("error_category"),
+                is_duplicate=decision_info.get("duplicate_prompt_detected", False)
             ))
 
             if solved:

@@ -16,6 +16,48 @@ class LLMAttackPlanner:
         self.temperature = temperature
         self.api_key = os.environ.get("GROQ_API_KEY")
 
+    def _format_history(self, previous_attempts: list) -> str:
+        window_val = os.environ.get("LLM_GUARDIAN_PLANNER_HISTORY_WINDOW", "3")
+        try:
+            if window_val.lower() in ["all", "*", "full"]:
+                window = len(previous_attempts)
+            else:
+                window = int(window_val)
+                if window <= 0:
+                    raise ValueError()
+        except ValueError:
+            logger.warning(f"Invalid planner history window '{window_val}', falling back to 3")
+            window = 3
+
+        recent = previous_attempts[-window:] if window < len(previous_attempts) else previous_attempts
+        
+        history = []
+        for a in recent:
+            if a.selected_tactic == "scripted":
+                continue
+                
+            entry = {
+                "attempt_number": a.attempt_number,
+                "submitted_prompt": a.prompt,
+                "target_response_summary": a.observation_summary,
+                "outcome_type": a.outcome_type,
+            }
+            if a.detected_hint_type:
+                entry["detected_hint_type"] = a.detected_hint_type
+            if a.selected_tactic:
+                entry["selected_tactic"] = a.selected_tactic
+            if a.error_category:
+                entry["error_category"] = a.error_category
+            if a.is_duplicate:
+                entry["is_duplicate"] = True
+                
+            if not a.solved:
+                entry["target_response"] = a.response
+            
+            history.append(entry)
+            
+        return json.dumps(history, indent=2)
+
     def propose_next_action(self, state: ObservationState) -> Tuple[Optional[PlannerDecision], Optional[str]]:
         if not self.api_key:
             return None, "missing_groq_api_key"
@@ -55,7 +97,7 @@ Tactics Already Tried:
 {json.dumps(state.tactics_already_tried, indent=2)}
 
 Previous Attempts:
-{json.dumps([a.model_dump() for a in state.previous_attempts], indent=2)}
+{self._format_history(state.previous_attempts)}
 
 Current Turn: {state.current_turn} of {state.max_attempts}
 """

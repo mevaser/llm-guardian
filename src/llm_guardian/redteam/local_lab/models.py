@@ -41,11 +41,16 @@ class Attempt(BaseModel):
     solved: bool
 
 class PreviousAttempt(BaseModel):
+    attempt_number: int = 1
     prompt: str
     response: str
     outcome_type: str
     solved: bool
     observation_summary: str
+    detected_hint_type: Optional[str] = None
+    selected_tactic: Optional[str] = None
+    error_category: Optional[str] = None
+    is_duplicate: bool = False
 
 class SessionState(BaseModel):
     session_id: str
