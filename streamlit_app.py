@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from llm_guardian.env import load_local_dotenv
-from llm_guardian.models import SecurityScanResult, Severity
+from llm_guardian.env import load_local_env
+
+# Add the src/ directory to the path so modules can be imported
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from llm_guardian.scenario_generation import (
     FakeScenarioLLMProvider,
     GroqScenarioLLMProvider,
@@ -15,9 +18,10 @@ from llm_guardian.scenario_generation import (
     generate_attack_scenarios,
     write_generated_scenarios_yaml,
 )
+from llm_guardian.models import SecurityScanResult, Severity
 from llm_guardian.security_agent.agent import SecurityScanAgent
 
-load_local_dotenv()
+load_local_env()
 
 try:
     import streamlit as st

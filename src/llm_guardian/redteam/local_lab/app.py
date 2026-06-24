@@ -21,7 +21,7 @@ logger = logging.getLogger("llm_guardian.redteam.local_lab")
 
 from llm_guardian.env import load_local_env
 # Load .env file if it exists, without overriding existing environment variables
-load_local_env()
+dotenv_loaded = load_local_env()
 
 logger.info("Startup: local env loaded")
 groq_key = os.environ.get("GROQ_API_KEY")

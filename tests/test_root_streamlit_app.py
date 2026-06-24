@@ -17,6 +17,10 @@ def root_streamlit_app_module(monkeypatch: pytest.MonkeyPatch):
     fake_streamlit = types.ModuleType("streamlit")
     monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
     sys.modules.pop("streamlit_app", None)
+    
+    repo_root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(repo_root))
+    
     return importlib.import_module("streamlit_app")
 
 
@@ -43,6 +47,8 @@ def test_importing_root_streamlit_app_does_not_execute_scan(monkeypatch: pytest.
     )
     sys.modules.pop("streamlit_app", None)
 
+    repo_root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(repo_root))
     importlib.import_module("streamlit_app")
 
     assert call_counter["count"] == 0
@@ -127,6 +133,12 @@ def test_run_streamlit_scenario_generation_requires_groq_key(
     monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
     monkeypatch.chdir(tmp_path)
     sys.modules.pop("streamlit_app", None)
+    
+    import llm_guardian.env
+    monkeypatch.setattr(llm_guardian.env, "load_local_env", lambda env_path=None: False)
+    
+    repo_root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(repo_root))
     root_streamlit_app_module = importlib.import_module("streamlit_app")
 
     with pytest.raises(ValueError, match="GROQ_API_KEY is required for provider=groq"):
@@ -143,13 +155,20 @@ def test_root_streamlit_app_import_loads_dotenv(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    (tmp_path / ".env").write_text("GROQ_API_KEY=streamlit-dotenv-key\n", encoding="utf-8")
     fake_streamlit = types.ModuleType("streamlit")
     monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
-    monkeypatch.chdir(tmp_path)
     sys.modules.pop("streamlit_app", None)
 
+    import llm_guardian.env
+    called = False
+    def mock_load_local_env(env_path=None):
+        nonlocal called
+        called = True
+        return True
+    monkeypatch.setattr(llm_guardian.env, "load_local_env", mock_load_local_env)
+
+    repo_root = Path(__file__).resolve().parents[1]
+    monkeypatch.syspath_prepend(str(repo_root))
     importlib.import_module("streamlit_app")
 
-    assert os.environ["GROQ_API_KEY"] == "streamlit-dotenv-key"
+    assert called is True

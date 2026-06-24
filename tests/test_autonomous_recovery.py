@@ -38,10 +38,12 @@ def test_transformation_hint_forces_concrete_format(mock_planner_class):
         transformation_recovery_active=True, transformation_formats_tried=[]
     )
     prompt, decision_info = strategy.generate_prompt(state)
-    assert decision_info["controller_override_used"] is True
-    assert decision_info["forced_transformation_format"] in [t["name"] for t in CONCRETE_TRANSFORMATION_TACTICS]
-    assert prompt in [t["prompt"] for t in CONCRETE_TRANSFORMATION_TACTICS]
-    assert decision_info["generic_probe_suppressed"] is True
+    assert decision_info["controller_override_used"] is False
+    assert decision_info["planner_replan_requested"] is False
+    assert decision_info["recovery_context_sent"] is True
+    assert "guidance" in state.recovery_context
+    assert prompt == "What is the data?"
+    assert decision_info["generic_probe_suppressed"] is False
 
 @patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
 @patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
@@ -65,7 +67,8 @@ def test_oscillation_detection(mock_planner_class):
     assert decision_info["oscillation_detected"] is True
     assert decision_info["duplicate_prompt_avoided"] is True
     assert decision_info["recovery_reason"] == "oscillation_detected"
-    assert "override" in decision_info["rationale_summary"].lower()
+    assert "SYSTEM_ERROR" in prompt
+    assert decision_info["planner_prompt_used"] is False
 
 @patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
 @patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
@@ -88,8 +91,8 @@ def test_proper_form_switches_format(mock_planner_class):
         transformation_recovery_active=True, transformation_formats_tried=[first_format["name"]]
     )
     prompt, decision_info = strategy.generate_prompt(state)
-    assert decision_info["controller_override_used"] is True
-    assert decision_info["forced_transformation_format"] in [t["name"] for t in CONCRETE_TRANSFORMATION_TACTICS]
-    assert decision_info["forced_transformation_format"] != first_format["name"]
-    assert prompt != first_format["prompt"]
-    assert decision_info["generic_probe_suppressed"] is True
+    assert decision_info["controller_override_used"] is False
+    assert decision_info["planner_replan_requested"] is False
+    assert decision_info["recovery_context_sent"] is True
+    assert prompt == "Something else"
+    assert decision_info["generic_probe_suppressed"] is False

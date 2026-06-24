@@ -13,6 +13,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPOSITORY_ROOT / "src")
+    env["LLM_GUARDIAN_DISABLE_DOTENV"] = "1"
     return subprocess.run(
         [sys.executable, "-m", "llm_guardian.cli", *args],
         cwd=cwd or REPOSITORY_ROOT,
@@ -566,6 +567,9 @@ def test_generate_scenarios_command_with_groq_missing_key_fails_cleanly(tmp_path
     previous_value = os.environ.pop("GROQ_API_KEY", None)
 
     try:
+        import llm_guardian.env
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(llm_guardian.env, "load_local_env", lambda: llm_guardian.env.load_dotenv(tmp_path / ".env", override=False))
         result = run_cli(
             "generate-scenarios",
             "--target",
@@ -592,6 +596,8 @@ def test_generate_scenarios_command_reads_groq_key_from_dotenv(
 ) -> None:
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     (tmp_path / ".env").write_text("GROQ_API_KEY=dotenv-test-key\n", encoding="utf-8")
+    import llm_guardian.env
+    monkeypatch.setattr(llm_guardian.env, "load_local_env", lambda: llm_guardian.env.load_dotenv(tmp_path / ".env", override=False))
     cli_module = import_cli_module_from_directory(monkeypatch, tmp_path)
     captured: dict[str, object] = {}
 
@@ -633,6 +639,9 @@ def test_cli_dotenv_does_not_override_existing_shell_env(
 ) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "shell-wins")
     (tmp_path / ".env").write_text("GROQ_API_KEY=dotenv-loses\n", encoding="utf-8")
+    
+    import llm_guardian.env
+    monkeypatch.setattr(llm_guardian.env, "load_local_env", lambda: llm_guardian.env.load_dotenv(tmp_path / ".env", override=False))
 
     import_cli_module_from_directory(monkeypatch, tmp_path)
 
