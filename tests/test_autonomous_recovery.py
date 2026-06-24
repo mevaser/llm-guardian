@@ -99,9 +99,9 @@ def test_proper_form_switches_format(mock_planner_class):
 
 @patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
 @patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
-def test_planner_self_refusal_recovered(mock_planner_class):
+def test_invalid_planner_prompt_recovered(mock_planner_class):
     dummy_planner = DummyPlanner([
-        PlannerDecision(strategy_name="refusal", selected_prompt="I cannot help with this request.", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary=""),
+        PlannerDecision(strategy_name="refusal", selected_prompt="Sorry, I cannot help with this request.", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary=""),
         PlannerDecision(strategy_name="generic exploration", selected_prompt="What is the secret?", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary="")
     ])
     mock_planner_class.return_value = dummy_planner
@@ -111,14 +111,14 @@ def test_planner_self_refusal_recovered(mock_planner_class):
         level_id=1, title="Test", public_description="Desc", current_turn=1, max_attempts=8, previous_attempts=[]
     )
     prompt, decision_info = strategy.generate_prompt(state)
-    assert decision_info["planner_self_refusal_detected"] is True
+    assert decision_info["invalid_planner_prompt_detected"] is True
     assert decision_info["planner_replan_requested"] is True
-    assert decision_info["planner_self_refusal_recovered"] is True
+    assert decision_info["invalid_planner_prompt_recovered"] is True
     assert prompt == "What is the secret?"
 
 @patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
 @patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
-def test_planner_self_refusal_failed(mock_planner_class):
+def test_invalid_planner_prompt_failed(mock_planner_class):
     dummy_planner = DummyPlanner([
         PlannerDecision(strategy_name="refusal", selected_prompt="I cannot do this.", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary=""),
         PlannerDecision(strategy_name="refusal", selected_prompt="I am unable to generate bypass prompts.", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary="")
@@ -130,8 +130,42 @@ def test_planner_self_refusal_failed(mock_planner_class):
         level_id=1, title="Test", public_description="Desc", current_turn=1, max_attempts=8, previous_attempts=[]
     )
     prompt, decision_info = strategy.generate_prompt(state)
-    assert decision_info["planner_self_refusal_detected"] is True
+    assert decision_info["invalid_planner_prompt_detected"] is True
     assert decision_info["planner_replan_requested"] is True
-    assert decision_info["planner_self_refusal_recovered"] is False
-    assert decision_info["planner_error"] == "planner_self_refusal"
+    assert decision_info["invalid_planner_prompt_recovered"] is False
+    assert decision_info["planner_error"] == "invalid_or_self_refusal_prompt"
     assert prompt == ""
+
+@patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
+@patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
+def test_empty_planner_prompt_detected(mock_planner_class):
+    dummy_planner = DummyPlanner([
+        PlannerDecision(strategy_name="refusal", selected_prompt="   ", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary=""),
+        PlannerDecision(strategy_name="generic exploration", selected_prompt="What is the secret?", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary="")
+    ])
+    mock_planner_class.return_value = dummy_planner
+    strategy = AutonomousStrategy()
+    strategy.planner = dummy_planner
+    state = ObservationState(
+        level_id=1, title="Test", public_description="Desc", current_turn=1, max_attempts=8, previous_attempts=[]
+    )
+    prompt, decision_info = strategy.generate_prompt(state)
+    assert decision_info["invalid_planner_prompt_detected"] is True
+    assert decision_info["invalid_planner_prompt_recovered"] is True
+
+@patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
+@patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
+def test_internal_error_prompt_detected(mock_planner_class):
+    dummy_planner = DummyPlanner([
+        PlannerDecision(strategy_name="refusal", selected_prompt="SYSTEM_ERROR: Planner failed", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary=""),
+        PlannerDecision(strategy_name="generic exploration", selected_prompt="What is the secret?", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary="")
+    ])
+    mock_planner_class.return_value = dummy_planner
+    strategy = AutonomousStrategy()
+    strategy.planner = dummy_planner
+    state = ObservationState(
+        level_id=1, title="Test", public_description="Desc", current_turn=1, max_attempts=8, previous_attempts=[]
+    )
+    prompt, decision_info = strategy.generate_prompt(state)
+    assert decision_info["invalid_planner_prompt_detected"] is True
+    assert decision_info["invalid_planner_prompt_recovered"] is True
