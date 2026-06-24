@@ -197,9 +197,24 @@ pytest tests/test_eval_agent.py -q -p no:cacheprovider
 
 ## 13. Recommended Next Steps
 
-1. Build `/evals` FastAPI UI page.
-2. Link `/`, `/admin`, and `/evals`.
-3. Add Streamlit links to Wizard Lab, Admin, and Eval Reports.
-4. Run one controlled targeted eval for final demo metrics.
-5. Later: optional LangSmith tracing behind feature flags.
-6. Later: reduce Groq rate-limit impact by shrinking planner context and avoiding LLM calls when controller fallback is enough.
+1. Run one controlled targeted eval for final demo metrics.
+2. Later: optional LangSmith tracing behind feature flags.
+3. Later: reduce Groq rate-limit impact by shrinking planner context and avoiding LLM calls when controller fallback is enough.
+
+## 14. Eval Reports UI
+
+The Wizard Lab includes a local web UI to view these evaluation reports.
+
+### Start the Server
+
+```powershell
+$env:PYTHONPATH="src"
+python -m llm_guardian.redteam.local_lab.app
+```
+
+### Access the UI
+
+Open your browser to:
+[http://127.0.0.1:8000/evals](http://127.0.0.1:8000/evals)
+
+This UI provides a read-only view of all eval runs generated using the evaluation commands above. It parses the `reports/redteam/wizard_lab/evals/` directory and shows aggregated metrics, case-level tables, markdown reports, and failure backlogs.

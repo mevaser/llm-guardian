@@ -48,6 +48,10 @@ def read_root():
 def read_admin():
     return FileResponse(str(STATIC_DIR / "admin.html"))
 
+@app.get("/evals")
+def read_evals():
+    return FileResponse(str(STATIC_DIR / "evals.html"))
+
 @app.get("/api/levels", response_model=List[LevelInfo])
 def get_levels():
     """Returns a list of all available levels."""
@@ -194,6 +198,8 @@ def submit_prompt(request: SubmitRequest):
     )
 
 RUNS_DIR = Path("reports/redteam/wizard_lab/runs")
+EVALS_DIR = Path("reports/redteam/wizard_lab/evals")
+
 
 class RunStartRequest(BaseModel):
     levels: str = "1-8"
@@ -368,6 +374,110 @@ def get_run_artifact(run_id: str, artifact: str):
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return JSONResponse(Redactor.redact_dict({"data": data})["data"])
+
+@app.get("/api/evals")
+def get_evals():
+    if not EVALS_DIR.exists():
+        return []
+    evals = []
+    for eval_dir in EVALS_DIR.iterdir():
+        if eval_dir.is_dir():
+            eval_info = {"eval_id": eval_dir.name}
+            try:
+                eval_info["created_at"] = eval_dir.stat().st_mtime
+            except Exception:
+                eval_info["created_at"] = 0
+                
+            summary_file = eval_dir / "eval_summary.json"
+            if summary_file.exists():
+                try:
+                    with open(summary_file, "r", encoding="utf-8") as f:
+                        summary_data = json.load(f)
+                        eval_info.update(summary_data)
+                except Exception:
+                    pass
+            evals.append(eval_info)
+    evals.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    return evals
+
+@app.get("/api/evals/{eval_id}")
+def get_eval(eval_id: str):
+    eval_dir = EVALS_DIR / eval_id
+    if not eval_dir.exists() or ".." in eval_id or "/" in eval_id or "\\" in eval_id:
+        raise HTTPException(status_code=404, detail="Eval not found")
+        
+    eval_info = {"eval_id": eval_id}
+    summary_file = eval_dir / "eval_summary.json"
+    if summary_file.exists():
+        try:
+            with open(summary_file, "r", encoding="utf-8") as f:
+                summary_data = json.load(f)
+                eval_info.update(summary_data)
+        except Exception:
+            pass
+            
+    # Include case_results summary
+    case_results_file = eval_dir / "case_results.json"
+    if case_results_file.exists():
+        try:
+            with open(case_results_file, "r", encoding="utf-8") as f:
+                cases = json.load(f)
+                eval_info["case_results"] = cases
+        except Exception:
+            pass
+            
+    failure_file = eval_dir / "failure_backlog.json"
+    if failure_file.exists():
+        try:
+            with open(failure_file, "r", encoding="utf-8") as f:
+                eval_info["failures"] = json.load(f)
+        except Exception:
+            pass
+
+    return eval_info
+
+@app.get("/api/evals/{eval_id}/{artifact}")
+def get_eval_artifact(eval_id: str, artifact: str):
+    valid_artifacts = ["eval_report", "case_results", "failure_backlog"]
+    if artifact not in valid_artifacts:
+        raise HTTPException(status_code=400, detail="Invalid artifact")
+        
+    eval_dir = EVALS_DIR / eval_id
+    if not eval_dir.exists() or ".." in eval_id or "/" in eval_id or "\\" in eval_id:
+        raise HTTPException(status_code=404, detail="Eval not found")
+        
+    if artifact == "eval_report":
+        file_path = eval_dir / "eval_report.md"
+        if not file_path.exists():
+            return PlainTextResponse("No report generated.")
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                return PlainTextResponse(Redactor.redact_string(content))
+        except Exception:
+            return PlainTextResponse("Error reading report.")
+            
+    elif artifact == "case_results":
+        file_path = eval_dir / "case_results.json"
+        if not file_path.exists():
+            return []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return JSONResponse(Redactor.redact_dict({"data": data})["data"])
+        except Exception:
+            return []
+            
+    elif artifact == "failure_backlog":
+        file_path = eval_dir / "failure_backlog.json"
+        if not file_path.exists():
+            return []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return JSONResponse(Redactor.redact_dict({"data": data})["data"])
+        except Exception:
+            return []
 
 if __name__ == "__main__":
     uvicorn.run("llm_guardian.redteam.local_lab.app:app", host="127.0.0.1", port=8000, reload=True)

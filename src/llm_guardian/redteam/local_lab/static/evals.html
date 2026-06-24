@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wizard Lab Evals</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e1e; color: #d4d4d4; margin: 0; padding: 20px; }
+        h1, h2, h3, h4 { color: #569cd6; margin-top: 0; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #252526; padding: 15px 20px; border-radius: 5px; }
+        .header-titles h1 { margin: 0 0 5px 0; }
+        .header-titles p { margin: 0; color: #9cdcfe; font-size: 1.1em; }
+        .btn { background: #094771; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 1em; text-decoration: none; display: inline-block; }
+        .btn:hover { background: #11588a; }
+        .container { display: flex; gap: 20px; height: calc(100vh - 120px); }
+        .sidebar { width: 320px; background: #252526; padding: 15px; border-radius: 5px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+        .main { flex: 1; background: #252526; padding: 20px; border-radius: 5px; overflow-y: auto; }
+        .run-list { flex: 1; overflow-y: auto; border-top: 1px solid #444; padding-top: 10px; margin-top: 10px; }
+        .run-item { padding: 10px; margin-bottom: 10px; background: #333; cursor: pointer; border-radius: 4px; border-left: 4px solid transparent; }
+        .run-item:hover { background: #444; }
+        .run-item.active { background: #094771; border-left-color: #569cd6; }
+        .card { background: #333; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
+        .grid-status { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .grid-status div { background: #1e1e1e; padding: 10px; border-radius: 4px; text-align: center; }
+        .grid-status strong { display: block; color: #9cdcfe; font-size: 0.9em; margin-bottom: 5px; text-transform: uppercase; }
+        .grid-status span { font-size: 1.2em; }
+        .tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .tab { padding: 8px 15px; background: #333; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .tab.active { background: #094771; }
+        pre { background: #1e1e1e; padding: 15px; overflow-x: auto; border: 1px solid #444; border-radius: 4px; white-space: pre-wrap; font-size: 14px; line-height: 1.4; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
+        th, td { border: 1px solid #444; padding: 8px; text-align: left; }
+        th { background: #1e1e1e; color: #569cd6; }
+        .code-snippet { background: #1e1e1e; padding: 15px; border-radius: 4px; font-family: monospace; color: #dcdcaa; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-titles">
+        <h1>Wizard Lab Eval Reports</h1>
+        <p>Evaluation results, metrics, trajectory scores, and failure taxonomy</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <a href="/" class="btn">Back to Lab</a>
+        <a href="/admin" class="btn">Admin Runs</a>
+    </div>
+</div>
+
+<div class="container">
+    <div class="sidebar">
+        <div class="run-list" style="border-top: none; padding-top: 0; margin-top: 0;">
+            <h3 style="margin-top: 0;">Eval Runs</h3>
+            <div id="evals-list">Loading...</div>
+        </div>
+    </div>
+    
+    <div class="main">
+        <div id="empty-state">
+            <h2>No eval reports found</h2>
+            <p>Run the following command to generate a targeted hint eval:</p>
+            <div class="code-snippet">$env:PYTHONPATH="src"
+python -m llm_guardian.redteam.local_lab.eval_agent `
+  --strategies autonomous `
+  --cases src/llm_guardian/redteam/local_lab/eval_cases.json `
+  --case-ids hint_transformation,hint_alias_state,hint_tool_diagnostic,hint_policy_restriction `
+  --runs 1 `
+  --max-attempts 5 `
+  --delay-ms 1500 `
+  --export-failure-cases</div>
+        </div>
+        
+        <div id="eval-details" style="display:none;">
+            <div class="card" style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 id="eval-title" style="margin: 0;">Eval Details</h2>
+                </div>
+                <div class="grid-status" style="margin-top: 15px;" id="eval-meta-grid"></div>
+            </div>
+            
+            <div class="tabs">
+                <div class="tab active" onclick="showTab(event, 'summary')">Summary & Metrics</div>
+                <div class="tab" onclick="showTab(event, 'case-results')">Case Results</div>
+                <div class="tab" onclick="showTab(event, 'report')">Markdown Report</div>
+                <div class="tab" onclick="showTab(event, 'failures')">Failure Cases</div>
+            </div>
+            
+            <div id="tab-summary" class="tab-content">
+                <div class="card" id="summary-metrics">
+                    <h3>Aggregated Metrics (Autonomous Strategy)</h3>
+                    <div class="grid-status" id="agg-metrics-grid"></div>
+                    <div id="taxonomy-summary" style="margin-top: 20px;"></div>
+                </div>
+            </div>
+            
+            <div id="tab-case-results" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('case-results')" style="margin-bottom: 10px;">Refresh Case Results</button>
+                <div id="case-results-content">Loading...</div>
+            </div>
+            
+            <div id="tab-report" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('report')" style="margin-bottom: 10px;">Refresh Report</button>
+                <pre id="report-content">Loading report...</pre>
+            </div>
+            
+            <div id="tab-failures" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('failures')" style="margin-bottom: 10px;">Refresh Failures</button>
+                <div id="failures-content">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/evals.js"></script>
+
+</body>
+</html>
