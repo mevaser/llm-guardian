@@ -472,8 +472,9 @@ def main() -> None:
         "It does not test real third-party systems."
     )
     st.info(
-        "Looking for Wizard Lab Agent Runs? "
-        "Open [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) to view the Wizard Leak Lab Admin Dashboard."
+        "Looking for Wizard Lab Agent Runs or Eval Reports? "
+        "Open [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) to view the Admin Dashboard, "
+        "or [http://127.0.0.1:8000/evals](http://127.0.0.1:8000/evals) to view Evaluation Reports."
     )
     ensure_session_state(st.session_state)
 
