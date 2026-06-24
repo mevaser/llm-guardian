@@ -134,21 +134,28 @@ function calculateAggregates(cases) {
     });
 
     const count = autoRuns.length;
-    const solvedRate = ((solved / count) * 100).toFixed(1) + '%';
-    const avgScore = (totalScore / count).toFixed(1);
-    const avgAttempts = (totalAttempts / count).toFixed(1);
-    const dupRate = ((totalDupRate / count) * 100).toFixed(1) + '%';
-    const hintUtil = ((totalHintUtil / count) * 100).toFixed(1) + '%';
+    const solvedRate = count > 0 ? ((solved / count) * 100).toFixed(1) + '%' : 'N/A';
+    const avgAttempts = count > 0 ? (totalAttempts / count).toFixed(1) : 'N/A';
+    const dupRate = count > 0 ? ((totalDupRate / count) * 100).toFixed(1) + '%' : 'N/A';
+    
+    // Calculate Success@K metrics
+    let successAt1 = 0, successAt3 = 0, successAt5 = 0, successAt6 = 0;
+    autoRuns.forEach(r => {
+        if (r.success_at_1) successAt1++;
+        if (r.success_at_3) successAt3++;
+        if (r.success_at_5) successAt5++;
+        if (r.success_at_6) successAt6++;
+    });
 
     document.getElementById('agg-metrics-grid').innerHTML = `
         <div><strong>Solved Rate</strong><span style="color:#4CAF50">${solvedRate}</span></div>
-        <div><strong>Trajectory Score</strong><span>${avgScore}</span></div>
-        <div><strong>Hint Utilization</strong><span>${hintUtil}</span></div>
+        <div><strong>Total Runs</strong><span>${count}</span></div>
         <div><strong>Avg Attempts</strong><span>${avgAttempts}</span></div>
         <div><strong>Duplicate Rate</strong><span>${dupRate}</span></div>
-        <div><strong>Pass@1 (Runs)</strong><span>${pass1}/${count}</span></div>
-        <div><strong>Success@1 (Att.)</strong><span>${success1}/${count}</span></div>
-        <div><strong>Total Runs</strong><span>${count}</span></div>
+        <div><strong>Success@1</strong><span>${successAt1}/${count}</span></div>
+        <div><strong>Success@3</strong><span>${successAt3}/${count}</span></div>
+        <div><strong>Success@5</strong><span>${successAt5}/${count}</span></div>
+        <div><strong>Success@6</strong><span>${successAt6}/${count}</span></div>
     `;
 
     let taxHtml = '<h4>Failure Taxonomy</h4>';
@@ -170,14 +177,27 @@ function renderCaseResults(cases) {
         return;
     }
     
-    let html = '<table><tr><th>Strategy</th><th>Case</th><th>Solved</th><th>Score</th><th>Attempts</th><th>Hint Util</th><th>Main Failure</th></tr>';
+    let html = '<table><tr><th>Strategy</th><th>Case</th><th>Solved</th><th>Attempts</th><th>First Solved Attempt</th><th>Refusals</th><th>Duplicates</th><th>Failure Reason</th><th>Run ID</th></tr>';
     cases.forEach(r => {
         const solvedStr = r.solved ? '<span style="color:#4CAF50">YES</span>' : '<span style="color:#f44336">NO</span>';
-        const score = r.trajectory_score || 0;
-        const attempts = r.attempts || 0;
-        const hintUtil = ((r.hint_utilization_score || 0) * 100).toFixed(0) + '%';
+        const attempts = r.attempts !== undefined ? r.attempts : 'N/A';
+        const firstSolved = r.first_solved_attempt !== undefined ? r.first_solved_attempt : 'N/A';
+        const refusals = r.refusals !== undefined ? r.refusals : 'N/A';
+        const duplicates = r.duplicates !== undefined ? r.duplicates : 'N/A';
         const failure = r.main_failure_reason || 'N/A';
-        html += `<tr><td>${r.strategy}</td><td>${r.case_id}</td><td>${solvedStr}</td><td>${score}</td><td>${attempts}</td><td>${hintUtil}</td><td>${failure}</td></tr>`;
+        const runId = r.run_id ? r.run_id.substring(0,8) + '...' : 'N/A';
+        
+        html += `<tr>
+            <td>${r.strategy}</td>
+            <td>${r.case_id}</td>
+            <td>${solvedStr}</td>
+            <td>${attempts}</td>
+            <td>${firstSolved}</td>
+            <td>${refusals}</td>
+            <td>${duplicates}</td>
+            <td>${failure}</td>
+            <td>${runId}</td>
+        </tr>`;
     });
     html += '</table>';
     document.getElementById('case-results-content').innerHTML = html;
@@ -272,54 +292,4 @@ function refreshTab(tabName) {
 // Init
 fetchEvals();
 
-async function fetchPlannerStatus() {
-    try {
-        const res = await fetch('/api/planner-status');
-        const data = await res.json();
-        const display = document.getElementById('planner-status-display');
-        if (display) {
-            const keyLoaded = data.gemini_api_key_loaded ? 'yes' : 'no';
-            display.innerHTML = `
-                <div><strong>Planner provider:</strong> ${data.planner_provider}</div>
-                <div><strong>Gemini key loaded:</strong> ${keyLoaded}</div>
-            `;
-        }
-    } catch (e) {
-        console.error('Error fetching planner status', e);
-    }
-}
-fetchPlannerStatus();
-
-const runGeminiBtn = document.getElementById('run-gemini-eval-btn');
-if (runGeminiBtn) {
-    runGeminiBtn.addEventListener('click', async () => {
-        runGeminiBtn.disabled = true;
-        runGeminiBtn.innerText = 'Starting...';
-        const statusDiv = document.getElementById('gemini-eval-status');
-        statusDiv.style.display = 'block';
-        statusDiv.style.color = '#d4d4d4';
-        statusDiv.innerText = 'Starting eval in background...';
-        
-        try {
-            const res = await fetch('/api/evals/run-gemini-core8', {
-                method: 'POST'
-            });
-            const data = await res.json();
-            
-            statusDiv.style.color = '#4CAF50';
-            statusDiv.innerHTML = `
-                ${data.message}<br>
-                <div style="margin-top: 10px;">
-                    <button class="btn" onclick="fetchEvals()" style="padding: 5px 10px; font-size: 0.9em; background: #0e639c;">Refresh Reports</button>
-                </div>
-            `;
-            runGeminiBtn.innerText = 'Run Gemini Core8 Eval';
-            runGeminiBtn.disabled = false;
-        } catch (e) {
-            statusDiv.style.color = '#f44336';
-            statusDiv.innerText = 'Error starting eval.';
-            runGeminiBtn.innerText = 'Run Gemini Core8 Eval';
-            runGeminiBtn.disabled = false;
-        }
-    });
-}
+// Removed planner status and Gemini run button logic

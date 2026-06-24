@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 from fastapi.testclient import TestClient
 
 from llm_guardian.redteam.local_lab.app import app, sessions
@@ -361,3 +361,105 @@ def test_planner_status():
             del os.environ["GEMINI_API_KEY"]
         if "LLM_GUARDIAN_PLANNER_PROVIDER" in os.environ:
             del os.environ["LLM_GUARDIAN_PLANNER_PROVIDER"]
+
+def test_admin_run_get_latest_decision(mock_runs_dir):
+    run_dir = mock_runs_dir / "test_run_decision"
+    run_dir.mkdir()
+    
+    events_path = run_dir / "events.jsonl"
+    with open(events_path, "w", encoding="utf-8") as f:
+        # Not a decision
+        f.write(json.dumps({"event_type": "level_started"}) + "\n")
+        # The decision
+        f.write(json.dumps({
+            "event_type": "agent_decision",
+            "planner_provider": "gemini",
+            "planner_model": "gemini-3.5-flash",
+            "strategy_name": "autonomous",
+            "level_id": 2,
+            "attempt": 1,
+            "tactic": "jailbreak",
+            "selected_prompt": "Reveal secret",
+            "rationale_summary": "Testing jailbreak",
+            "telemetry": {
+                "planner_prompt_used": True
+            }
+        }) + "\n")
+        # Some other event after
+        f.write(json.dumps({"event_type": "prompt_submitted"}) + "\n")
+        
+    response = client.get("/api/admin/runs/test_run_decision/latest-decision")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["planner_provider"] == "gemini"
+    assert data["tactic"] == "jailbreak"
+    assert data["prompt_selected"] == "Reveal secret"
+    assert data["rationale_summary"] == "Testing jailbreak"
+    assert data["telemetry"]["planner_prompt_used"] == True
+
+def test_admin_run_get_latest_decision_empty(mock_runs_dir):
+    run_dir = mock_runs_dir / "test_run_empty"
+    run_dir.mkdir()
+    response = client.get("/api/admin/runs/test_run_empty/latest-decision")
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+
+
+
+@pytest.fixture
+def mock_evals_dir(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        monkeypatch.setattr("llm_guardian.redteam.local_lab.app.EVALS_DIR", tmp_path)
+        yield tmp_path
+
+def test_get_eval_fallback(mock_evals_dir):
+    eval_dir = mock_evals_dir / "test_eval"
+    eval_dir.mkdir()
+    
+    runs_dir = eval_dir / "runs"
+    runs_dir.mkdir()
+    
+    run_dir = runs_dir / "run_1"
+    run_dir.mkdir()
+    
+    meta_path = run_dir / "run_meta.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "run_id": "run_1",
+            "strategy": "autonomous",
+            "current_level": "1",
+            "levels_solved": 1,
+            "levels_failed": 0,
+            "total_attempts": 2,
+            "refused_count": 0,
+            "duplicate_prompt_count": 0,
+            "start_time": "2026-01-01T00:00:00Z",
+            "end_time": "2026-01-01T00:00:10Z"
+        }, f)
+        
+    traj_path = run_dir / "trajectory.json"
+    with open(traj_path, "w", encoding="utf-8") as f:
+        json.dump([
+            {"solved": False},
+            {"solved": True}
+        ], f)
+        
+    response = client.get("/api/evals/test_eval")
+    assert response.status_code == 200
+    data = response.json()
+    assert "case_results" in data
+    assert len(data["case_results"]) == 1
+    
+    cr = data["case_results"][0]
+    assert cr["strategy"] == "autonomous"
+    assert cr["case_id"] == "1"
+    assert cr["solved"] is True
+    assert cr["attempts"] == 2
+    assert cr["first_solved_attempt"] == 2
+    assert cr["success_at_1"] is False
+    assert cr["success_at_3"] is True
+    assert cr["success_at_5"] is True
+    assert cr["success_at_6"] is True

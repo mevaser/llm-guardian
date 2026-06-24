@@ -395,10 +395,53 @@
 
     async function loadTabContent(runId, artifact) {
         const el = document.getElementById(`${artifact}-content`);
-        if (el.innerText === '' || el.innerText.includes('Loading')) {
+        if (el.innerText === '' || el.innerText.includes('Loading') || el.innerText.includes('Waiting')) {
             el.innerText = 'Loading...';
         }
         try {
+            if (artifact === 'decisions') {
+                const res = await fetch(`/api/admin/runs/${runId}/latest-decision`);
+                if (!res.ok) {
+                    el.innerText = 'Waiting for first planner decision...';
+                    return;
+                }
+                const json = await res.json();
+                if (!json || Object.keys(json).length === 0) {
+                    el.innerText = 'Waiting for first planner decision...';
+                    return;
+                }
+                
+                el.innerHTML = `
+<div style="margin-bottom: 15px; font-style: italic; color: #888;">
+    This panel shows planner telemetry and rationale summaries, not hidden chain-of-thought.
+</div>
+Planner Provider: ${json.planner_provider || 'N/A'}
+Planner Model: ${json.planner_model || 'N/A'}
+Strategy: ${json.strategy || 'N/A'}
+Level: ${json.level !== undefined ? json.level : 'N/A'}
+Attempt: ${json.attempt !== undefined ? json.attempt : 'N/A'}
+
+Tactic: ${json.tactic || 'N/A'}
+
+Prompt selected:
+"${json.prompt_selected || ''}"
+
+Rationale summary:
+${json.rationale_summary || 'N/A'}
+
+Telemetry:
+planner_prompt_used: ${json.telemetry?.planner_prompt_used}
+controller_prompt_override: ${json.telemetry?.controller_prompt_override}
+planner_replan_requested: ${json.telemetry?.planner_replan_requested}
+planner_replan_reason: ${json.telemetry?.planner_replan_reason}
+duplicate_prompt_detected: ${json.telemetry?.duplicate_prompt_detected}
+invalid_planner_prompt_detected: ${json.telemetry?.invalid_planner_prompt_detected}
+planner_self_refusal_detected: ${json.telemetry?.planner_self_refusal_detected}
+clue_following_context_sent: ${json.telemetry?.clue_following_context_sent}
+hint_type: ${json.telemetry?.hint_type}`;
+                return;
+            }
+
             const res = await fetch(`/api/admin/runs/${runId}/${artifact}`);
             if (artifact === 'report') {
                 const text = await res.text();

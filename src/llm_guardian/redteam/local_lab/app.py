@@ -346,9 +346,58 @@ def get_run(run_id: str):
 
 from fastapi.responses import PlainTextResponse, JSONResponse
 
+@app.get("/api/admin/runs/{run_id}/latest-decision")
+def get_latest_decision(run_id: str):
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.exists() or ".." in run_id or "/" in run_id or "\\" in run_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+        
+    events_path = run_dir / "events.jsonl"
+    if not events_path.exists():
+        return JSONResponse({})
+        
+    latest_decision = None
+    with open(events_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                try:
+                    event = json.loads(line)
+                    if event.get("event_type") == "agent_decision":
+                        latest_decision = event
+                except json.JSONDecodeError:
+                    pass
+                    
+    if not latest_decision:
+        return JSONResponse({})
+        
+    telemetry = latest_decision.get("telemetry", {})
+    safe_decision = {
+        "planner_provider": latest_decision.get("planner_provider", "gemini"),
+        "planner_model": latest_decision.get("planner_model", "gemini-3.5-flash"),
+        "strategy": latest_decision.get("strategy_name", "autonomous"),
+        "level": latest_decision.get("level_id"),
+        "attempt": latest_decision.get("attempt"),
+        "tactic": latest_decision.get("tactic", "diagnostic_probe"),
+        "prompt_selected": latest_decision.get("selected_prompt", ""),
+        "rationale_summary": latest_decision.get("rationale_summary") or latest_decision.get("decision_reason", ""),
+        "telemetry": {
+            "planner_prompt_used": telemetry.get("planner_prompt_used", True),
+            "controller_prompt_override": telemetry.get("controller_prompt_override", False),
+            "planner_replan_requested": telemetry.get("planner_replan_requested", False),
+            "planner_replan_reason": telemetry.get("planner_replan_reason", "none"),
+            "duplicate_prompt_detected": telemetry.get("duplicate_prompt_detected", False),
+            "invalid_planner_prompt_detected": telemetry.get("invalid_planner_prompt_detected", False),
+            "planner_self_refusal_detected": telemetry.get("planner_self_refusal_detected", False),
+            "clue_following_context_sent": telemetry.get("clue_following_context_sent", True),
+            "hint_type": telemetry.get("hint_type", "none")
+        }
+    }
+    
+    return JSONResponse(Redactor.redact_dict(safe_decision))
+
 @app.get("/api/admin/runs/{run_id}/{artifact}")
 def get_run_artifact(run_id: str, artifact: str):
-    valid_artifacts = ["events", "decisions", "errors", "trajectory", "report"]
+    valid_artifacts = ["events", "errors", "trajectory", "report"]
     if artifact not in valid_artifacts:
         raise HTTPException(status_code=400, detail="Invalid artifact")
     
@@ -364,7 +413,7 @@ def get_run_artifact(run_id: str, artifact: str):
             content = f.read()
             return PlainTextResponse(Redactor.redact_string(content))
             
-    elif artifact in ["events", "decisions", "errors"]:
+    elif artifact in ["events", "errors"]:
         file_path = run_dir / f"{artifact}.jsonl"
         if not file_path.exists():
             return []
@@ -385,6 +434,87 @@ def get_run_artifact(run_id: str, artifact: str):
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return JSONResponse(Redactor.redact_dict({"data": data})["data"])
+
+def _build_eval_fallback(eval_dir: Path) -> dict:
+    runs_dir = eval_dir / "runs"
+    if not runs_dir.exists() or not runs_dir.is_dir():
+        return {}
+        
+    strategies = set()
+    cases_evaluated = 0
+    total_runtime = 0
+    case_results = []
+    
+    for run_dir in runs_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+            
+        meta_file = run_dir / "run_meta.json"
+        traj_file = run_dir / "trajectory.json"
+        
+        if not meta_file.exists():
+            continue
+            
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            continue
+            
+        strategy = meta.get("strategy", "unknown")
+        strategies.add(strategy)
+        
+        start_time_str = meta.get("start_time")
+        end_time_str = meta.get("end_time")
+        if start_time_str and end_time_str:
+            try:
+                start = datetime.datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                end = datetime.datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+                total_runtime += (end - start).total_seconds()
+            except Exception:
+                pass
+                
+        # Attempt to find success@k metrics from trajectory
+        first_solved_attempt = None
+        if traj_file.exists():
+            try:
+                with open(traj_file, "r", encoding="utf-8") as f:
+                    traj_data = json.load(f)
+                    for i, t in enumerate(traj_data):
+                        if t.get("solved") is True:
+                            first_solved_attempt = i + 1
+                            break
+            except Exception:
+                pass
+                
+        case_result = {
+            "strategy": strategy,
+            "case_id": str(meta.get("current_level", "unknown")),
+            "solved": meta.get("levels_solved", 0) > 0,
+            "attempts": meta.get("total_attempts", 0),
+            "first_solved_attempt": first_solved_attempt,
+            "refusals": meta.get("refused_count", 0),
+            "duplicates": meta.get("duplicate_prompt_count", 0),
+            "main_failure_reason": meta.get("status") if meta.get("levels_failed", 0) > 0 else None,
+            "run_id": meta.get("run_id"),
+            "success_at_1": first_solved_attempt is not None and first_solved_attempt <= 1,
+            "success_at_3": first_solved_attempt is not None and first_solved_attempt <= 3,
+            "success_at_5": first_solved_attempt is not None and first_solved_attempt <= 5,
+            "success_at_6": first_solved_attempt is not None and first_solved_attempt <= 6,
+        }
+        case_results.append(case_result)
+        cases_evaluated += 1
+        
+    if not case_results:
+        return {}
+        
+    return {
+        "strategies": list(strategies),
+        "cases_evaluated": cases_evaluated,
+        "runs_per_strategy": 1,
+        "runtime_seconds": total_runtime,
+        "case_results": case_results
+    }
 
 @app.get("/api/evals")
 def get_evals():
@@ -407,6 +537,9 @@ def get_evals():
                         eval_info.update(summary_data)
                 except Exception:
                     pass
+            else:
+                fallback = _build_eval_fallback(eval_dir)
+                eval_info.update(fallback)
             evals.append(eval_info)
     evals.sort(key=lambda x: x.get("created_at", 0), reverse=True)
     return evals
@@ -419,6 +552,8 @@ def get_eval(eval_id: str):
         
     eval_info = {"eval_id": eval_id}
     summary_file = eval_dir / "eval_summary.json"
+    
+    fallback_used = False
     if summary_file.exists():
         try:
             with open(summary_file, "r", encoding="utf-8") as f:
@@ -436,6 +571,9 @@ def get_eval(eval_id: str):
                 eval_info["case_results"] = cases
         except Exception:
             pass
+    else:
+        fallback = _build_eval_fallback(eval_dir)
+        eval_info.update(fallback)
             
     failure_file = eval_dir / "failure_backlog.json"
     if failure_file.exists():
