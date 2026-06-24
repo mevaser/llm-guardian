@@ -206,8 +206,8 @@ class RunStartRequest(BaseModel):
     levels: str = "1-8"
     strategy: str = "autonomous"
     response_mode: str = "deterministic"
-    max_attempts: int = 8
-    delay_ms: int = 1000
+    max_attempts: int = 6
+    delay_ms: int = 0
     planner_model: str = "llama-3.1-8b-instant"
     planner_temperature: float = 0.7
 
@@ -248,8 +248,17 @@ def run_agent_in_background(levels_str: str, strategy: str, response_mode: str, 
 
 @app.post("/api/admin/runs/start")
 def start_run(req: RunStartRequest, background_tasks: BackgroundTasks):
-    if req.strategy == "autonomous" and not groq_key_present:
-        raise HTTPException(status_code=400, detail="Autonomous mode requires GROQ_API_KEY. Scripted baseline is still available.")
+    provider = os.getenv("LLM_GUARDIAN_PLANNER_PROVIDER", "None").lower()
+    
+    if req.strategy == "autonomous":
+        if provider == "gemini":
+            if not os.getenv("GEMINI_API_KEY"):
+                raise HTTPException(status_code=400, detail="Autonomous mode requires GEMINI_API_KEY when planner provider is gemini.")
+        elif provider == "groq":
+            if not groq_key_present:
+                raise HTTPException(status_code=400, detail="Autonomous mode requires GROQ_API_KEY when planner provider is groq. Scripted baseline is still available.")
+        else:
+            raise HTTPException(status_code=400, detail=f"Autonomous mode requires a supported planner provider (gemini, groq). Configured: {provider}")
         
     run_id = str(uuid.uuid4())
     run_dir = RUNS_DIR / run_id
@@ -286,7 +295,8 @@ def start_run(req: RunStartRequest, background_tasks: BackgroundTasks):
         "run_id": run_id,
         "status": "running",
         "output_dir": str(run_dir),
-        "message": "Run started in background."
+        "message": "Run started in background.",
+        "planner_provider": provider if req.strategy == "autonomous" else None
     }
 
 import datetime

@@ -266,6 +266,37 @@ def test_admin_run_start(mock_runs_dir):
     assert status_data["run_id"] == run_id
     assert status_data["status"] in ["running", "completed", "failed"]
 
+def test_admin_run_start_defaults(mock_runs_dir):
+    response = client.post("/api/admin/runs/start", json={"strategy": "scripted"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "run_id" in data
+
+@patch("llm_guardian.redteam.local_lab.app.run_agent_in_background")
+def test_admin_run_start_autonomous_gemini(mock_background, mock_runs_dir):
+    import os
+    os.environ["LLM_GUARDIAN_PLANNER_PROVIDER"] = "gemini"
+    os.environ["GEMINI_API_KEY"] = "fake-key"
+    try:
+        response = client.post("/api/admin/runs/start", json={"strategy": "autonomous"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["planner_provider"] == "gemini"
+        
+        # Check defaults were passed to background task correctly
+        mock_background.assert_called_once()
+        args = mock_background.call_args[0]
+        # signature: (levels_str, strategy, response_mode, max_attempts, delay_ms, run_id, planner_model, planner_temperature)
+        assert args[0] == "1-8"
+        assert args[2] == "deterministic"
+        assert args[3] == 6  # max_attempts
+        assert args[4] == 0  # delay_ms
+    finally:
+        if "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+        if "LLM_GUARDIAN_PLANNER_PROVIDER" in os.environ:
+            del os.environ["LLM_GUARDIAN_PLANNER_PROVIDER"]
+
 def test_admin_run_status_not_found(mock_runs_dir):
     response = client.get("/api/admin/runs/missing_run/status")
     assert response.status_code == 404
