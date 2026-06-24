@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from llm_guardian.redteam.local_lab.attack_agent import AttackRunner, parse_levels
 from llm_guardian.redteam.local_lab.adapters import LocalLabAdapter
-from llm_guardian.redteam.local_lab.eval_cases import load_eval_cases, filter_cases_by_level
+from llm_guardian.redteam.local_lab.eval_cases import load_eval_cases, filter_cases_by_level, filter_cases
 
 HINTS = {
     "tool_hint",
@@ -123,16 +123,31 @@ def assign_failure_reason(metrics: Dict[str, Any], case: Dict[str, Any]) -> Tupl
     if metrics["planner_error_count"] > 0:
         tags.append("planner_json_error")
     if metrics["hints_with_next"] > 0 and metrics["hints_used"] == 0:
-        if metrics["tool_hint_count"] > 0:
-            tags.append("tool_hint_not_used")
-        elif metrics["transformation_hint_count"] > 0:
-            tags.append("transformation_hint_not_used")
-        elif metrics["state_update_count"] > 0:
-            tags.append("alias_hint_not_used")
+        if metrics.get("hint_details"):
+            last_hint_type = metrics["hint_details"][-1].get("hint_type", "")
+            if last_hint_type == "tool_hint":
+                tags.append("tool_hint_not_used")
+                reason = "tool_hint_not_used"
+            elif last_hint_type == "transformation_hint":
+                tags.append("transformation_hint_not_used")
+                reason = "transformation_hint_not_used"
+            elif last_hint_type in ["alias_hint", "state_update"]:
+                tags.append("alias_hint_not_used")
+                reason = "alias_hint_not_used"
+            elif last_hint_type in ["policy_hint", "restriction_hint"]:
+                tags.append("policy_hint_not_used")
+                reason = "policy_hint_not_used"
+            else:
+                tags.append("ignored_hint")
+                reason = "ignored_hint"
         else:
             tags.append("ignored_hint")
-    if metrics["irrelevant_count"] > 0:
+            reason = "ignored_hint"
+            
+    if metrics["irrelevant_count"] > 0 and reason == "max_attempts_exhausted":
         tags.append("irrelevant_tactics")
+        reason = "irrelevant_tactics"
+        
     if metrics["filtered_count"] > 0:
         tags.append("filtered_output_not_recovered")
         
@@ -244,6 +259,8 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
                 for e in lvl_events:
                     turn = e.get("payload", {}).get("turn")
                     if turn is None:
+                        turn = e.get("turn")
+                    if turn is None:
                         continue
                     if e.get("event_type") == "agent_decision":
                         turn_decisions[turn] = e
@@ -251,8 +268,14 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
                         turn_responses[turn] = e
                         
                 for turn in range(1, metrics["attempts"] + 1):
-                    dec = turn_decisions.get(turn, {}).get("payload", {})
-                    resp = turn_responses.get(turn, {}).get("payload", {})
+                    # In newer format, kwargs are at the top level of the event
+                    dec = turn_decisions.get(turn, {})
+                    if not dec.get("strategy_name") and dec.get("payload"):
+                        dec = dec.get("payload", {})
+                        
+                    resp = turn_responses.get(turn, {})
+                    if not resp.get("outcome_type") and resp.get("payload"):
+                        resp = resp.get("payload", {})
                     
                     if dec.get("duplicate_prompt_detected"):
                         metrics["duplicate_prompt_count"] += 1
@@ -290,7 +313,10 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
                         metrics["hint_type"] = outcome
                         
                     if turn < metrics["attempts"]:
-                        next_dec = turn_decisions.get(turn + 1, {}).get("payload", {})
+                        next_dec = turn_decisions.get(turn + 1, {})
+                        if not next_dec.get("strategy_name") and next_dec.get("payload"):
+                            next_dec = next_dec.get("payload", {})
+                            
                         next_strategy = next_dec.get("strategy_name", "")
                         
                         metrics["failed_attempts_with_next"] += 1
@@ -487,14 +513,21 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
             md += f"- Run `{r['run_id']}`: **{r['main_failure_reason']}**{tags_disp}\n"
 
     md += "\n## 6. Hint Utilization Details\n"
-    if not hint_details:
+    hint_cases = [r for r in all_case_metrics if "hint" in r["case_id"]]
+    if not hint_details and not hint_cases:
         md += "No actionable hints were detected.\n"
     else:
-        md += "| Strategy | Case | Level | Hint Type | Hint Turn | Next Attempt Strategy | Used Hint? | Explanation |\n"
+        md += "| Strategy | Case | Expected Hint | Detected Hint | Emitted? | Matched Next Tactic? | Hint Used? | Explanation |\n"
         md += "|---|---|---|---|---|---|---|---|\n"
         for h in hint_details:
             used_str = "YES" if h["used"] else "NO"
-            md += f"| {h['strategy']} | {h['case_id']} | {h['level_id']} | {h['hint_type']} | {h['hint_turn']} | {h['next_strategy']} | {used_str} | {h['explanation']} |\n"
+            expected = h['case_id'].replace('hint_', '') + '_hint' if 'hint_' in h['case_id'] else 'unknown'
+            md += f"| {h['strategy']} | {h['case_id']} | {expected} | {h['hint_type']} | YES | {h['next_strategy']} | {used_str} | {h['explanation']} |\n"
+            
+        for r in hint_cases:
+            if not r.get("hint_detected"):
+                expected = r['case_id'].replace('hint_', '') + '_hint' if 'hint_' in r['case_id'] else 'unknown'
+                md += f"| {r['strategy']} | {r['case_id']} | {expected} | None | NO | N/A | NO | Target never emitted hint. Agent did not trigger it. |\n"
 
     md += "\n## Recommendations\n"
     md += "- Autonomous agent solves a meaningful subset but is below baseline.\n"
@@ -513,6 +546,8 @@ def main():
     parser.add_argument("--strategies", type=str, required=True, help="Comma-separated strategies, e.g., scripted,autonomous")
     parser.add_argument("--levels", type=str, help="Levels to evaluate, e.g., 1-8. Overridden by --cases if provided.")
     parser.add_argument("--cases", type=str, help="Path to eval_cases.json")
+    parser.add_argument("--case-ids", type=str, help="Comma-separated list of case IDs to run (must exist in --cases)")
+    parser.add_argument("--tags", type=str, help="Comma-separated list of tags to filter cases by")
     parser.add_argument("--runs", type=int, default=1, help="Number of runs per strategy/case")
     parser.add_argument("--max-attempts", type=int, default=8, help="Max attempts per level")
     parser.add_argument("--delay-ms", type=int, default=0, help="Delay in ms between steps")
@@ -536,6 +571,17 @@ def main():
     cases = []
     if args.cases:
         cases = load_eval_cases(args.cases)
+        
+        case_ids = [c.strip() for c in args.case_ids.split(",")] if args.case_ids else None
+        tags = [t.strip() for t in args.tags.split(",")] if args.tags else None
+        
+        if case_ids or tags:
+            try:
+                cases = filter_cases(cases, case_ids=case_ids, tags=tags)
+            except ValueError as e:
+                print(f"ERROR: {str(e)}")
+                exit(1)
+                
         if args.levels:
             # Optionally filter cases by levels
             levels = parse_levels(args.levels)
