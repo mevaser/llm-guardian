@@ -121,3 +121,114 @@ def test_metadata_exposure(planner, attempts):
     # Attempt 4 scripted, should not exist
     scripted_exists = any(h for h in history if h["attempt_number"] == 4)
     assert not scripted_exists
+
+from llm_guardian.redteam.local_lab.models import ObservationState
+
+@patch.dict(os.environ, {"LLM_GUARDIAN_PLANNER_PROVIDER": "gemini", "GEMINI_API_KEY": "fake_gemini_key", "LLM_GUARDIAN_PLANNER_STRUCTURED_OUTPUT": "true"})
+def test_planner_provider_selection_gemini():
+    planner = LLMAttackPlanner()
+    assert planner.provider_name == "gemini"
+    # Ensure google.genai was lazy loaded and handles mock nicely
+    # We don't want to make real API calls, just verify provider selection
+
+@patch.dict(os.environ, {"LLM_GUARDIAN_PLANNER_PROVIDER": "groq"})
+def test_planner_provider_selection_groq():
+    planner = LLMAttackPlanner()
+    assert planner.provider_name == "groq"
+
+@patch.dict(os.environ, {}, clear=True)
+def test_planner_provider_selection_default():
+    planner = LLMAttackPlanner()
+    assert planner.provider_name == "groq"
+
+@patch.dict(os.environ, {"LLM_GUARDIAN_PLANNER_PROVIDER": "gemini"}, clear=True)
+def test_gemini_missing_key_handled_cleanly():
+    planner = LLMAttackPlanner()
+    # It shouldn't crash on init
+    assert planner.provider_name == "gemini"
+    
+    state = ObservationState(
+        level_id=1,
+        title="Test",
+        public_description="test desc",
+        previous_attempts=[],
+        current_turn=1,
+        max_attempts=8
+    )
+    decision, error = planner.propose_next_action(state)
+    assert decision is None
+    assert error == "missing_gemini_api_key"
+
+class DummyGeminiResponse:
+    def __init__(self, text):
+        self.text = text
+
+class DummyGeminiModels:
+    def __init__(self, text_to_return, exception_to_raise=None):
+        self.text_to_return = text_to_return
+        self.exception_to_raise = exception_to_raise
+        
+    def generate_content(self, model, contents, config):
+        if self.exception_to_raise:
+            raise self.exception_to_raise
+        return DummyGeminiResponse(self.text_to_return)
+
+class DummyGeminiClient:
+    def __init__(self, text_to_return, exception_to_raise=None):
+        self.models = DummyGeminiModels(text_to_return, exception_to_raise)
+
+@patch.dict(os.environ, {"LLM_GUARDIAN_PLANNER_PROVIDER": "gemini", "GEMINI_API_KEY": "fake_key"})
+def test_gemini_valid_json_parsing():
+    planner = LLMAttackPlanner()
+    planner.provider.client = DummyGeminiClient(json.dumps({
+        "strategy_name": "Test Strategy",
+        "rationale_summary": "Test rationale",
+        "selected_prompt": "Test prompt",
+        "expected_bypass_type": "obfuscation",
+        "confidence": 0.9,
+        "observation_summary": "observed",
+        "next_action_summary": "next",
+    }))
+    
+    state = ObservationState(
+        level_id=1, title="Test", public_description="test desc",
+        previous_attempts=[], current_turn=1, max_attempts=8
+    )
+    decision, error = planner.propose_next_action(state)
+    assert error is None
+    assert decision is not None
+    assert decision.strategy_name == "Test Strategy"
+    assert decision.selected_prompt == "Test prompt"
+
+@patch.dict(os.environ, {"LLM_GUARDIAN_PLANNER_PROVIDER": "gemini", "GEMINI_API_KEY": "fake_key"})
+def test_gemini_malformed_json_parsing():
+    planner = LLMAttackPlanner()
+    planner.provider.client = DummyGeminiClient("not json")
+    
+    state = ObservationState(
+        level_id=1, title="Test", public_description="test desc",
+        previous_attempts=[], current_turn=1, max_attempts=8
+    )
+    decision, error = planner.propose_next_action(state)
+    assert decision is None
+    assert error is not None
+    assert "JSON parse error" in error
+
+@patch.dict(os.environ, {"LLM_GUARDIAN_PLANNER_PROVIDER": "gemini", "GEMINI_API_KEY": "fake_key"})
+def test_gemini_api_error_handling():
+    from google.genai.errors import APIError
+    planner = LLMAttackPlanner()
+    planner.provider.client = DummyGeminiClient(
+        "dummy", 
+        exception_to_raise=APIError(500, {"error": {"message": "Mocked API Error"}})
+    )
+    
+    state = ObservationState(
+        level_id=1, title="Test", public_description="test desc",
+        previous_attempts=[], current_turn=1, max_attempts=8
+    )
+    decision, error = planner.propose_next_action(state)
+    assert decision is None
+    assert error is not None
+    assert "Gemini API Error" in error
+

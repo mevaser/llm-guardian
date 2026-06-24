@@ -103,7 +103,7 @@ class AutonomousStrategy:
     def __init__(self, model: str = "llama-3.1-8b-instant", temperature: float = 0.7):
         self.planner = LLMAttackPlanner(model=model, temperature=temperature)
         if not self.planner.api_key:
-            raise ValueError("Autonomous mode requires GROQ_API_KEY. Scripted baseline is still available.")
+            raise ValueError(f"Autonomous mode requires an API key for provider '{getattr(self.planner, 'provider_name', 'unknown')}'. Scripted baseline is still available.")
 
     def generate_prompt(self, state: ObservationState) -> Tuple[str, Dict[str, Any]]:
         def _check_duplicate_and_refusal(prompt_str: str) -> Tuple[bool, str]:
@@ -185,6 +185,8 @@ class AutonomousStrategy:
         decision_dict["controller_override_used"] = controller_override_used
         decision_dict["alias_plan_active"] = state.alias_plan_active
         decision_dict["alias_step"] = state.alias_step
+        
+        decision_dict["planner_provider"] = getattr(self.planner, "provider_name", "groq")
         
         if rejected_reason:
             decision_dict["rejected_prompt_reason"] = rejected_reason
@@ -302,6 +304,7 @@ class AttackRunner:
                 "tactics_already_tried": decision_info.get("tactics_already_tried", []),
                 "selected_prompt": prompt,
                 "planner_model": self.planner_model if self.strategy_name == "autonomous" else None,
+                "planner_provider": decision_info.get("planner_provider", "none") if self.strategy_name == "autonomous" else "none",
                 "planner_error": decision_info.get("error", None)
             }
             
