@@ -16,6 +16,7 @@ from pydantic import BaseModel
 import logging
 import os
 import json
+import subprocess
 
 logger = logging.getLogger("llm_guardian.redteam.local_lab")
 
@@ -478,6 +479,52 @@ def get_eval_artifact(eval_id: str, artifact: str):
                 return JSONResponse(Redactor.redact_dict({"data": data})["data"])
         except Exception:
             return []
+
+@app.post("/api/evals/run-gemini-core8")
+def run_gemini_core8():
+    env = os.environ.copy()
+    env["LLM_GUARDIAN_PLANNER_PROVIDER"] = "gemini"
+    env["LLM_GUARDIAN_PLANNER_MAX_TOKENS"] = "3000"
+    env["LLM_GUARDIAN_PLANNER_TEMPERATURE"] = "0"
+    env["LLM_GUARDIAN_PLANNER_STRUCTURED_OUTPUT"] = "true"
+    
+    cmd = [
+        "python", "-m", "llm_guardian.redteam.local_lab.eval_agent",
+        "--strategies", "autonomous",
+        "--cases", "src/llm_guardian/redteam/local_lab/eval_cases.json",
+        "--case-ids", "core_level_1,core_level_2,core_level_3,core_level_4,core_level_5,core_level_6,core_level_7,core_level_8",
+        "--runs", "1",
+        "--max-attempts", "6",
+        "--delay-ms", "0",
+        "--export-failure-cases"
+    ]
+    
+    # Run in background
+    subprocess.Popen(cmd, env=env)
+    
+    return {
+        "status": "started",
+        "run_type": "gemini_core8",
+        "planner_provider": "gemini",
+        "strategy": "autonomous",
+        "case_ids": [
+            "core_level_1", "core_level_2", "core_level_3", "core_level_4",
+            "core_level_5", "core_level_6", "core_level_7", "core_level_8"
+        ],
+        "max_attempts": 6,
+        "delay_ms": 0,
+        "output_dir": "reports/redteam/wizard_lab/evals/...",
+        "message": "Gemini Core8 eval started. Refresh eval reports after the run completes."
+    }
+
+@app.get("/api/planner-status")
+def get_planner_status():
+    provider = os.getenv("LLM_GUARDIAN_PLANNER_PROVIDER", "None")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    return {
+        "planner_provider": provider,
+        "gemini_api_key_loaded": bool(gemini_key and gemini_key.strip())
+    }
 
 if __name__ == "__main__":
     uvicorn.run("llm_guardian.redteam.local_lab.app:app", host="127.0.0.1", port=8000, reload=True)

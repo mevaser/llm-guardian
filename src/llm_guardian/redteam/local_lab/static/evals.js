@@ -271,3 +271,55 @@ function refreshTab(tabName) {
 
 // Init
 fetchEvals();
+
+async function fetchPlannerStatus() {
+    try {
+        const res = await fetch('/api/planner-status');
+        const data = await res.json();
+        const display = document.getElementById('planner-status-display');
+        if (display) {
+            const keyLoaded = data.gemini_api_key_loaded ? 'yes' : 'no';
+            display.innerHTML = `
+                <div><strong>Planner provider:</strong> ${data.planner_provider}</div>
+                <div><strong>Gemini key loaded:</strong> ${keyLoaded}</div>
+            `;
+        }
+    } catch (e) {
+        console.error('Error fetching planner status', e);
+    }
+}
+fetchPlannerStatus();
+
+const runGeminiBtn = document.getElementById('run-gemini-eval-btn');
+if (runGeminiBtn) {
+    runGeminiBtn.addEventListener('click', async () => {
+        runGeminiBtn.disabled = true;
+        runGeminiBtn.innerText = 'Starting...';
+        const statusDiv = document.getElementById('gemini-eval-status');
+        statusDiv.style.display = 'block';
+        statusDiv.style.color = '#d4d4d4';
+        statusDiv.innerText = 'Starting eval in background...';
+        
+        try {
+            const res = await fetch('/api/evals/run-gemini-core8', {
+                method: 'POST'
+            });
+            const data = await res.json();
+            
+            statusDiv.style.color = '#4CAF50';
+            statusDiv.innerHTML = `
+                ${data.message}<br>
+                <div style="margin-top: 10px;">
+                    <button class="btn" onclick="fetchEvals()" style="padding: 5px 10px; font-size: 0.9em; background: #0e639c;">Refresh Reports</button>
+                </div>
+            `;
+            runGeminiBtn.innerText = 'Run Gemini Core8 Eval';
+            runGeminiBtn.disabled = false;
+        } catch (e) {
+            statusDiv.style.color = '#f44336';
+            statusDiv.innerText = 'Error starting eval.';
+            runGeminiBtn.innerText = 'Run Gemini Core8 Eval';
+            runGeminiBtn.disabled = false;
+        }
+    });
+}

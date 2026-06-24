@@ -269,3 +269,64 @@ def test_admin_run_start(mock_runs_dir):
 def test_admin_run_status_not_found(mock_runs_dir):
     response = client.get("/api/admin/runs/missing_run/status")
     assert response.status_code == 404
+
+from unittest.mock import patch
+
+@patch("llm_guardian.redteam.local_lab.app.subprocess.Popen")
+def test_run_gemini_core8(mock_popen):
+    import os
+    os.environ["GEMINI_API_KEY"] = "fake-key"
+    try:
+        response = client.post("/api/evals/run-gemini-core8")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "started"
+        assert data["run_type"] == "gemini_core8"
+        assert data["planner_provider"] == "gemini"
+        assert data["strategy"] == "autonomous"
+        assert "core_level_1" in data["case_ids"]
+        assert "core_level_8" in data["case_ids"]
+        assert data["max_attempts"] == 6
+        assert data["delay_ms"] == 0
+        assert "GEMINI_API_KEY" not in str(data)
+        
+        mock_popen.assert_called_once()
+        args, kwargs = mock_popen.call_args
+        cmd = args[0]
+        assert "python" in cmd
+        assert "-m" in cmd
+        assert "llm_guardian.redteam.local_lab.eval_agent" in cmd
+        assert "autonomous" in cmd
+        assert "core_level_1,core_level_2,core_level_3,core_level_4,core_level_5,core_level_6,core_level_7,core_level_8" in cmd
+        assert "--max-attempts" in cmd
+        assert "6" in cmd
+        assert "--delay-ms" in cmd
+        assert "0" in cmd
+        
+        env = kwargs.get("env")
+        assert env is not None
+        assert env.get("LLM_GUARDIAN_PLANNER_PROVIDER") == "gemini"
+        assert env.get("LLM_GUARDIAN_PLANNER_MAX_TOKENS") == "3000"
+        assert env.get("LLM_GUARDIAN_PLANNER_TEMPERATURE") == "0"
+        assert env.get("LLM_GUARDIAN_PLANNER_STRUCTURED_OUTPUT") == "true"
+        assert env.get("GEMINI_API_KEY") == "fake-key"
+    finally:
+        if "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+
+def test_planner_status():
+    import os
+    os.environ["LLM_GUARDIAN_PLANNER_PROVIDER"] = "gemini"
+    os.environ["GEMINI_API_KEY"] = "fake-key"
+    try:
+        response = client.get("/api/planner-status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["planner_provider"] == "gemini"
+        assert data["gemini_api_key_loaded"] is True
+        assert "fake-key" not in str(data)
+    finally:
+        if "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+        if "LLM_GUARDIAN_PLANNER_PROVIDER" in os.environ:
+            del os.environ["LLM_GUARDIAN_PLANNER_PROVIDER"]
