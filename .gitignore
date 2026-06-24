@@ -44,5 +44,9 @@ Thumbs.db
 .idea/
 .vscode/
 
-
+# Zip files
 *.zip
+
+# Local eval/debug command outputs
+eval_output.txt
+targeted_hint_eval*.log
