@@ -5,6 +5,9 @@ import urllib.request
 import urllib.error
 from typing import Tuple, Optional, Any, Protocol
 
+from llm_guardian.env import load_local_env
+load_local_env()
+
 from pydantic import ValidationError
 
 from llm_guardian.redteam.local_lab.models import PlannerDecision

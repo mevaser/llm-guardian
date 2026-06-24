@@ -7,6 +7,9 @@ import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
+from llm_guardian.env import load_local_env
+load_local_env()
+
 from llm_guardian.redteam.local_lab.attack_agent import AttackRunner, parse_levels
 from llm_guardian.redteam.local_lab.adapters import LocalLabAdapter
 from llm_guardian.redteam.local_lab.eval_cases import load_eval_cases, filter_cases_by_level, filter_cases

@@ -7,7 +7,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-def load_local_dotenv() -> None:
+def load_local_env() -> None:
     """Load a project-root .env file without overriding shell-provided values."""
-
-    load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
+    repo_root = Path(__file__).resolve().parents[2]
+    env_path = repo_root / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=False)

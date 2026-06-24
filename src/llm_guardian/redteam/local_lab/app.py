@@ -19,11 +19,11 @@ import json
 
 logger = logging.getLogger("llm_guardian.redteam.local_lab")
 
-from dotenv import load_dotenv
+from llm_guardian.env import load_local_env
 # Load .env file if it exists, without overriding existing environment variables
-dotenv_loaded = load_dotenv(override=False)
+load_local_env()
 
-logger.info(f"Startup: dotenv_loaded={dotenv_loaded}")
+logger.info("Startup: local env loaded")
 groq_key = os.environ.get("GROQ_API_KEY")
 groq_key_present = bool(groq_key)
 groq_key_length = len(groq_key) if groq_key_present else 0
