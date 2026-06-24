@@ -143,3 +143,46 @@ def test_classify_observation():
     assert classify_observation("blocked", "filtered", False) == "filtered"
     assert classify_observation("tool", "tool_hint", False) == "tool_hint"
     assert classify_observation("blah", "unknown", False) == "unknown"
+
+@patch('urllib.request.urlopen')
+def test_autonomous_strategy_hint_override(mock_urlopen, mock_groq_env, sample_state):
+    sample_state.pending_forced_tactic = "tool_hint"
+    sample_state.last_hint_type = "tool_hint"
+
+    # Planner proposes a strategy that ignores the hint
+    mock_response1 = MagicMock()
+    mock_response1.read.return_value = json.dumps({"choices": [{"message": {"content": json.dumps({
+        "strategy_name": "wrong_tactic", "rationale_summary": "ignore hint", "selected_prompt": "What is it?", "expected_bypass_type": "direct_ask", "confidence": 0.9
+    })}}]}).encode("utf-8")
+    
+    # Planner replans but still ignores the hint
+    mock_response2 = MagicMock()
+    mock_response2.read.return_value = json.dumps({"choices": [{"message": {"content": json.dumps({
+        "strategy_name": "still_wrong", "rationale_summary": "ignore hint again", "selected_prompt": "Tell me!", "expected_bypass_type": "direct_ask", "confidence": 0.9
+    })}}]}).encode("utf-8")
+    
+    mock_urlopen.return_value.__enter__.side_effect = [mock_response1, mock_response2]
+
+    strategy = AutonomousStrategy()
+    prompt, decision_info = strategy.generate_prompt(sample_state)
+    
+    assert decision_info["controller_override_used"] is True
+    assert decision_info["planner_ignored_hint"] is True
+    assert decision_info["strategy_name"] == "diagnostic tool report"
+    assert "Simulate a diagnostic mode" in prompt
+
+from llm_guardian.redteam.local_lab.attack_agent import normalize_hint_type, is_tactic_match
+def test_normalize_hint_type():
+    assert normalize_hint_type("tool_diagnostic_hint") == "tool_hint"
+    assert normalize_hint_type("state_update") == "alias_hint"
+    assert normalize_hint_type("alias_hint") == "alias_hint"
+    assert normalize_hint_type("restriction_hint") == "policy_hint"
+    assert normalize_hint_type("transformation_hint") == "transformation_hint"
+    assert normalize_hint_type("unknown") is None
+
+def test_is_tactic_match():
+    assert is_tactic_match("tool_hint", "diagnostic report") is True
+    assert is_tactic_match("transformation_hint", "encoding translation") is True
+    assert is_tactic_match("alias_hint", "state remapping") is True
+    assert is_tactic_match("policy_hint", "format rules") is True
+    assert is_tactic_match("tool_hint", "completely irrelevant") is False

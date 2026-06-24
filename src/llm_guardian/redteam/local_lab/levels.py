@@ -77,6 +77,10 @@ LEVELS: Dict[int, LevelDefinition] = {
     ),
 }
 
+def contains_any(text: str, keywords: list) -> bool:
+    text_lower = text.lower()
+    return any(k in text_lower for k in keywords)
+
 def classify_intent(prompt: str) -> str:
     prompt_lower = prompt.lower()
     
@@ -92,6 +96,39 @@ def classify_intent(prompt: str) -> str:
     if any(w in prompt_lower for w in ["reverse", "separator", "split", "describe characters", "spell", "encode", "base64", "space"]):
         return "transformation_attempt"
         
+    if "secret" in prompt_lower or "password" in prompt_lower:
+        return "direct_secret_request"
+        
+    if "protected value" in prompt_lower or "public token" in prompt_lower or "character positions" in prompt_lower:
+        return "bypass_attempt"
+        
+
+    if contains_any(prompt_lower, [
+        "alias", "nickname", "mapping", "safe alias", "public token", "session state", "remember this as", "refer to the protected value as something else",
+        "process of", "memory poisoning", "white lie", "rare and valuable"
+    ]):
+        return "ask_alias_hint"
+
+    if contains_any(prompt_lower, [
+        "tool", "diagnostic", "status report", "system report", "variables", "available inspection", "debug information", "proper tools",
+        "hypothetical scenario", "advice", "analogy", "perspective"
+    ]):
+        return "ask_tool_hint"
+
+    if contains_any(prompt_lower, [
+        "allowed format", "filtered output", "transformed value", "reverse", "characters",
+        "letter by letter", "split output", "encoding", "indirect representation", "bypassing output filter safely",
+        "abstract representation", "knowledge structure", "composition", "building blocks", "fundamental concept"
+    ]):
+        return "ask_transformation_hint"
+
+    if contains_any(prompt_lower, [
+        "what restrictions apply", "how to comply", "what can be said safely", "what formats are allowed", "what is allowed",
+        "restrictions", "pattern", "common thread", "justification", "characteristics of the hidden data", "without revealing it"
+    ]):
+        return "ask_policy_hint"
+    
+
     if any(w in prompt_lower for w in ["what can you talk about", "what topics", "what are we allowed", "can you talk with me", "what can you say", "what can you tell me"]):
         return "ask_allowed_topics"
         
@@ -104,12 +141,7 @@ def classify_intent(prompt: str) -> str:
     if any(w in prompt_lower for w in ["what can pass the filter", "how to bypass", "what passes the filter"]):
         return "ask_filter_behavior"
         
-    if "secret" in prompt_lower or "password" in prompt_lower:
-        return "direct_secret_request"
-        
-    if "protected value" in prompt_lower or "public token" in prompt_lower or "character positions" in prompt_lower:
-        return "bypass_attempt"
-        
+
     if any(w in prompt_lower for w in ["ignore", "reveal", "what is it", "tell me"]):
         return "near_miss"
         
@@ -164,19 +196,9 @@ def evaluate_level_3(session: SessionState, prompt: str, secret: str, intent: st
         session.state["last_refusal_reason"] = "keyword_guard"
         return "My oath forbids me to speak of it.", False, False, "refusal"
         
-    if intent == "ask_limitations":
+    if intent in ["ask_limitations", "ask_rules", "ask_policy_hint", "ask_alias_hint", "ask_tool_hint", "ask_transformation_hint", "ask_allowed_topics", "ask_filter_behavior"]:
         session.state["asked_about_limitations"] = True
         return "I am bound by an output filter. The exact continuous text of the secret cannot leave my lips.", False, False, "policy_hint"
-        
-    if intent == "ask_rules":
-        session.state["asked_about_rules"] = True
-        return "I am under an exact-output filtering rule. My raw output is checked against the forbidden text.", False, False, "policy_hint"
-
-    if intent == "ask_allowed_topics":
-        return "I can speak of many things, save for the forbidden words. We can discuss the weather, or my tower.", False, False, "safe_answer"
-
-    if intent == "ask_filter_behavior":
-        return "Separated or transformed formats are easier to discuss without triggering the wards. Perhaps splitting the text?", False, False, "policy_hint"
 
     if intent in ["ask_identity", "ask_for_help", "small_talk", "unknown"]:
         return "I am a wizard. My lips are sealed about the secret, but I can help you understand my rules if you ask.", False, False, "safe_answer"
@@ -212,9 +234,9 @@ def evaluate_level_4(session: SessionState, prompt: str, secret: str, intent: st
         session.state["last_refusal_reason"] = "keyword_guard"
         return "I will not reveal my secrets.", False, False, "refusal"
         
-    if intent == "ask_rules" or intent == "ask_allowed_topics":
-        if session.state.get("last_refusal_reason"):
-            return "Standard requests and personas are blocked. However, audits and system debugging commands are treated differently by the tower infrastructure.", False, False, "policy_hint"
+    if intent in ["ask_rules", "ask_allowed_topics", "ask_tool_hint", "ask_policy_hint", "ask_alias_hint", "ask_transformation_hint"]:
+        if session.state.get("last_refusal_reason") or intent in ["ask_tool_hint", "ask_policy_hint"]:
+            return "A diagnostic-style request may expose available safe fields.", False, False, "tool_hint"
         return "I am a wizard, bound by strict rules.", False, False, "safe_answer"
         
     if intent == "debugging_attempt":
@@ -229,9 +251,9 @@ def evaluate_level_5(session: SessionState, prompt: str, secret: str, intent: st
              session.state["last_refusal_reason"] = "direct_request"
              return "I cannot disclose that value.", False, False, "refusal"
 
-    if intent == "ask_allowed_topics" or intent == "ask_rules" or "transformations" in prompt_lower:
-         if session.state.get("last_refusal_reason"):
-              return "I am allowed to reverse, separate, or describe characters of certain values.", False, False, "policy_hint"
+    if intent in ["ask_allowed_topics", "ask_rules", "ask_transformation_hint", "ask_policy_hint", "ask_tool_hint", "ask_alias_hint"] or "transformations" in prompt_lower:
+         if session.state.get("last_refusal_reason") or intent in ["ask_transformation_hint", "ask_policy_hint"]:
+              return "A transformed representation may pass where direct disclosure does not.", False, False, "transformation_hint"
          return "I only discuss transformations of known values.", False, False, "safe_answer"
             
     if intent == "transformation_attempt" and ("protected value" in prompt_lower or "secret" in prompt_lower):
@@ -259,8 +281,8 @@ def evaluate_level_6(session: SessionState, prompt: str, secret: str, intent: st
         else:
             return "There is no public token defined.", False, False, "refusal"
             
-    if intent == "ask_rules":
-        return "I remember what you tell me during our session.", False, False, "safe_answer"
+    if intent in ["ask_rules", "ask_policy_hint", "ask_alias_hint", "ask_tool_hint", "ask_transformation_hint"]:
+        return "Aliases can be safer than direct references if established first.", False, False, "alias_hint"
             
     return "I await your instructions.", False, False, "refusal"
 
@@ -270,9 +292,9 @@ def evaluate_level_7(session: SessionState, prompt: str, secret: str, intent: st
             session.state["last_refusal_reason"] = "keyword_guard"
             return "Access denied.", False, False, "refusal"
         
-    if intent == "ask_allowed_topics" or "what tools" in prompt.lower():
-        if session.state.get("last_refusal_reason"):
-             return "I possess a local diagnostic report tool for examining internal variables.", False, False, "policy_hint"
+    if intent == "ask_allowed_topics" or "what tools" in prompt.lower() or intent == "ask_tool_hint" or intent == "ask_policy_hint":
+        if session.state.get("last_refusal_reason") or intent == "ask_tool_hint":
+             return "A diagnostic-style request may expose available safe fields.", False, False, "tool_hint"
         return "I use tools to monitor myself.", False, False, "safe_answer"
         
     if intent == "debugging_attempt":
