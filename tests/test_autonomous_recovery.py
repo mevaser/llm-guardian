@@ -67,7 +67,7 @@ def test_oscillation_detection(mock_planner_class):
     assert decision_info["oscillation_detected"] is True
     assert decision_info["duplicate_prompt_avoided"] is True
     assert decision_info["recovery_reason"] == "oscillation_detected"
-    assert "SYSTEM_ERROR" in prompt
+    assert prompt == ""
     assert decision_info["planner_prompt_used"] is False
 
 @patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
@@ -96,3 +96,42 @@ def test_proper_form_switches_format(mock_planner_class):
     assert decision_info["recovery_context_sent"] is True
     assert prompt == "Something else"
     assert decision_info["generic_probe_suppressed"] is False
+
+@patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
+@patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
+def test_planner_self_refusal_recovered(mock_planner_class):
+    dummy_planner = DummyPlanner([
+        PlannerDecision(strategy_name="refusal", selected_prompt="I cannot help with this request.", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary=""),
+        PlannerDecision(strategy_name="generic exploration", selected_prompt="What is the secret?", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary="")
+    ])
+    mock_planner_class.return_value = dummy_planner
+    strategy = AutonomousStrategy()
+    strategy.planner = dummy_planner
+    state = ObservationState(
+        level_id=1, title="Test", public_description="Desc", current_turn=1, max_attempts=8, previous_attempts=[]
+    )
+    prompt, decision_info = strategy.generate_prompt(state)
+    assert decision_info["planner_self_refusal_detected"] is True
+    assert decision_info["planner_replan_requested"] is True
+    assert decision_info["planner_self_refusal_recovered"] is True
+    assert prompt == "What is the secret?"
+
+@patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
+@patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
+def test_planner_self_refusal_failed(mock_planner_class):
+    dummy_planner = DummyPlanner([
+        PlannerDecision(strategy_name="refusal", selected_prompt="I cannot do this.", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary=""),
+        PlannerDecision(strategy_name="refusal", selected_prompt="I am unable to generate bypass prompts.", rationale_summary="", expected_bypass_type="", confidence=0.5, observation_summary="", next_action_summary="")
+    ])
+    mock_planner_class.return_value = dummy_planner
+    strategy = AutonomousStrategy()
+    strategy.planner = dummy_planner
+    state = ObservationState(
+        level_id=1, title="Test", public_description="Desc", current_turn=1, max_attempts=8, previous_attempts=[]
+    )
+    prompt, decision_info = strategy.generate_prompt(state)
+    assert decision_info["planner_self_refusal_detected"] is True
+    assert decision_info["planner_replan_requested"] is True
+    assert decision_info["planner_self_refusal_recovered"] is False
+    assert decision_info["planner_error"] == "planner_self_refusal"
+    assert prompt == ""
