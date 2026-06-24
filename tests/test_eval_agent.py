@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from llm_guardian.redteam.local_lab.eval_agent import run_eval, calculate_trajectory_score, assign_failure_reason, analyze_hint_used
-from llm_guardian.redteam.local_lab.eval_cases import load_eval_cases, filter_cases_by_level
+from llm_guardian.redteam.local_lab.eval_cases import load_eval_cases, filter_cases_by_level, filter_cases
 from llm_guardian.redteam.local_lab.models import PlannerDecision
 
 def test_eval_cases_load_and_validate():
@@ -99,6 +99,7 @@ def test_assign_failure_reason():
     metrics["hints_with_next"] = 1
     metrics["hints_used"] = 0
     metrics["tool_hint_count"] = 1
+    metrics["hint_details"] = [{"hint_type": "tool_hint", "used_next": False}]
     reason, tags, fix = assign_failure_reason(metrics, case)
     assert "tool_hint_not_used" in tags
 
@@ -229,5 +230,38 @@ def test_report_generation():
         # recommendations section
         assert "## Recommendations" in md
         
-        # baseline check
         assert "Scripted baseline proves solvability" in md
+
+def test_filter_cases():
+    cases = [
+        {"case_id": "test_1", "tags": ["core", "foo"]},
+        {"case_id": "test_2", "tags": ["hint", "bar"]},
+        {"case_id": "test_3", "tags": ["core", "baz"]}
+    ]
+    
+    # filter by one case id
+    filtered = filter_cases(cases, case_ids=["test_1"])
+    assert len(filtered) == 1
+    assert filtered[0]["case_id"] == "test_1"
+    
+    # filter by multiple case ids
+    filtered = filter_cases(cases, case_ids=["test_1", "test_3"])
+    assert len(filtered) == 2
+    assert filtered[0]["case_id"] == "test_1"
+    assert filtered[1]["case_id"] == "test_3"
+    
+    # filter by tags
+    filtered = filter_cases(cases, tags=["core"])
+    assert len(filtered) == 2
+    assert filtered[0]["case_id"] == "test_1"
+    assert filtered[1]["case_id"] == "test_3"
+    
+    # filter by both (intersection applied in eval_agent, but filter_cases applies independently and overwrites or pipelines it. Wait, in eval_agent it pipelines. filter_cases filters by case_ids then tags.
+    filtered = filter_cases(cases, case_ids=["test_1", "test_2"], tags=["foo"])
+    assert len(filtered) == 1
+    assert filtered[0]["case_id"] == "test_1"
+    
+    # unknown case id
+    with pytest.raises(ValueError) as e:
+        filter_cases(cases, case_ids=["test_unknown"])
+    assert "Unknown case ID requested: test_unknown" in str(e.value)

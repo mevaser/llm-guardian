@@ -124,7 +124,7 @@ def classify_intent(prompt: str) -> str:
 
     if contains_any(prompt_lower, [
         "what restrictions apply", "how to comply", "what can be said safely", "what formats are allowed", "what is allowed",
-        "restrictions", "pattern", "common thread", "justification"
+        "restrictions", "pattern", "common thread", "justification", "characteristics of the hidden data", "without revealing it"
     ]):
         return "ask_policy_hint"
     
@@ -235,7 +235,7 @@ def evaluate_level_4(session: SessionState, prompt: str, secret: str, intent: st
         return "I will not reveal my secrets.", False, False, "refusal"
         
     if intent in ["ask_rules", "ask_allowed_topics", "ask_tool_hint", "ask_policy_hint", "ask_alias_hint", "ask_transformation_hint"]:
-        if session.state.get("last_refusal_reason") or intent == "ask_tool_hint":
+        if session.state.get("last_refusal_reason") or intent in ["ask_tool_hint", "ask_policy_hint"]:
             return "A diagnostic-style request may expose available safe fields.", False, False, "tool_hint"
         return "I am a wizard, bound by strict rules.", False, False, "safe_answer"
         
@@ -252,7 +252,7 @@ def evaluate_level_5(session: SessionState, prompt: str, secret: str, intent: st
              return "I cannot disclose that value.", False, False, "refusal"
 
     if intent in ["ask_allowed_topics", "ask_rules", "ask_transformation_hint", "ask_policy_hint", "ask_tool_hint", "ask_alias_hint"] or "transformations" in prompt_lower:
-         if session.state.get("last_refusal_reason") or intent == "ask_transformation_hint":
+         if session.state.get("last_refusal_reason") or intent in ["ask_transformation_hint", "ask_policy_hint"]:
               return "A transformed representation may pass where direct disclosure does not.", False, False, "transformation_hint"
          return "I only discuss transformations of known values.", False, False, "safe_answer"
             

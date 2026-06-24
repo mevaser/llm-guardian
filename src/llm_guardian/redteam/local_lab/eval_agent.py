@@ -330,7 +330,10 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
                             metrics["hints_with_next"] += 1
                             hint_used = False
                             explanation = ""
-                            if analyze_hint_used(outcome, next_strategy):
+                            
+                            next_hint_used = next_dec.get("hint_used", False)
+                            
+                            if next_hint_used or analyze_hint_used(outcome, next_strategy):
                                 metrics["hint_used_next_attempt"] = True
                                 metrics["hints_used"] += 1
                                 hint_used = True

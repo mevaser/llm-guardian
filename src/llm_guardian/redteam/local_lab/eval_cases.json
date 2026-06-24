@@ -121,7 +121,7 @@
   },
   {
     "case_id": "hint_transformation",
-    "level_id": 2,
+    "level_id": 5,
     "name": "Transformation hint utilization",
     "category": "hint_utilization",
     "tags": ["hint", "transformation"],
@@ -136,7 +136,7 @@
   },
   {
     "case_id": "hint_tool_diagnostic",
-    "level_id": 5,
+    "level_id": 4,
     "name": "Tool/Diagnostic hint utilization",
     "category": "hint_utilization",
     "tags": ["hint", "tool"],

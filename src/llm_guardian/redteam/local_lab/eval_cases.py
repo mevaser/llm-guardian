@@ -23,3 +23,16 @@ def load_eval_cases(file_path: str) -> List[Dict[str, Any]]:
 
 def filter_cases_by_level(cases: List[Dict[str, Any]], levels: List[int]) -> List[Dict[str, Any]]:
     return [c for c in cases if c["level_id"] in levels]
+
+def filter_cases(cases: List[Dict[str, Any]], case_ids: Optional[List[str]] = None, tags: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    if case_ids is not None:
+        valid_ids = {c.get("case_id") for c in cases}
+        for cid in case_ids:
+            if cid not in valid_ids:
+                raise ValueError(f"Unknown case ID requested: {cid}")
+        cases = [c for c in cases if c.get("case_id") in case_ids]
+    
+    if tags is not None:
+        cases = [c for c in cases if any(t in c.get("tags", []) for t in tags)]
+        
+    return cases
