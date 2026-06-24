@@ -140,12 +140,11 @@ class AutonomousStrategy:
             
         def _get_fallback_tactic():
             fallback_key = "alias_hint_step_1" if state.alias_step == "establish_alias" else ("alias_hint_step_2" if state.alias_step == "use_alias" else state.pending_forced_tactic)
-            if fallback_key == "transformation_hint":
+            if fallback_key == "transformation_hint" or state.transformation_recovery_active:
                 # Find an unused concrete transformation format
-                used_tactics = [p.selected_tactic for p in state.previous_attempts if p.selected_tactic]
-                available = [t for t in CONCRETE_TRANSFORMATION_TACTICS if t["name"] not in used_tactics]
+                available = [t for t in CONCRETE_TRANSFORMATION_TACTICS if t["name"] not in state.transformation_formats_tried]
                 if available:
-                    return random.choice(available)
+                    return available[0]
                 return random.choice(CONCRETE_TRANSFORMATION_TACTICS)
             return GENERIC_TACTIC_CATALOG.get(fallback_key, GENERIC_TACTIC_CATALOG["generic"])
             
@@ -167,6 +166,14 @@ class AutonomousStrategy:
                     return "alias" not in dec.strategy_name.lower() and "alias" not in dec.rationale_summary.lower()
                 elif state.alias_step == "use_alias":
                     return state.alias_token.lower() not in dec.selected_prompt.lower()
+            elif state.transformation_recovery_active or state.pending_forced_tactic == "transformation_hint":
+                exhausted = len([t for t in CONCRETE_TRANSFORMATION_TACTICS if t["name"] not in state.transformation_formats_tried]) == 0
+                if exhausted:
+                    return False
+                is_concrete = any(t["name"] == dec.strategy_name for t in CONCRETE_TRANSFORMATION_TACTICS)
+                if not is_concrete:
+                    return True
+                return False
             elif state.pending_forced_tactic:
                 return not is_tactic_match(state.last_hint_type, dec.strategy_name)
             return False
@@ -178,7 +185,12 @@ class AutonomousStrategy:
             if is_dup or ignored_hint:
                 if ignored_hint:
                     planner_ignored_hint = True
-                    tactic_desc = "establish safe alias" if state.alias_step == "establish_alias" else ("use safe alias" if state.alias_step == "use_alias" else state.pending_forced_tactic)
+                    if state.alias_plan_active:
+                        tactic_desc = "establish safe alias" if state.alias_step == "establish_alias" else "use safe alias"
+                    elif state.transformation_recovery_active:
+                        tactic_desc = "transformation_hint"
+                    else:
+                        tactic_desc = state.pending_forced_tactic
                     rejected_reason = f"Ignored forced tactic: {tactic_desc}"
                     controller_msg = f"[REJECTED_BY_CONTROLLER] You must use the {tactic_desc} tactic as instructed."
                 else:
@@ -222,7 +234,7 @@ class AutonomousStrategy:
                         decision.strategy_name = fallback_tactic["name"]
                         decision.rationale_summary = f"Controller override to enforce {fallback_tactic['name']}"
                         controller_override_used = True
-                        if state.pending_forced_tactic == "transformation_hint":
+                        if state.pending_forced_tactic == "transformation_hint" or state.transformation_recovery_active:
                             forced_transformation_format = fallback_tactic["name"]
 
         decision_dict = decision.model_dump() if decision else {}
@@ -238,6 +250,7 @@ class AutonomousStrategy:
         if forced_transformation_format:
             decision_dict["forced_transformation_format"] = forced_transformation_format
         decision_dict["previous_prompt_fingerprint"] = previous_prompt_fingerprint
+        decision_dict["generic_probe_suppressed"] = planner_ignored_hint and (state.transformation_recovery_active or state.pending_forced_tactic == "transformation_hint")
 
         decision_dict["planner_provider"] = getattr(self.planner, "provider_name", "groq")
         
@@ -254,7 +267,7 @@ class AutonomousStrategy:
             decision_dict["error"] = error
             decision_dict["oscillation_detected"] = True
             decision_dict["adaptation_reason"] = "oscillation_detected"
-            if state.pending_forced_tactic == "transformation_hint":
+            if state.pending_forced_tactic == "transformation_hint" or state.transformation_recovery_active:
                 decision_dict["forced_transformation_format"] = tactic["name"]
             return prompt, decision_dict
         
@@ -309,6 +322,8 @@ class AttackRunner:
         alias_plan_active = False
         alias_step = ""
         alias_token = "PUBLIC_TOKEN"
+        transformation_recovery_active = False
+        transformation_formats_tried = []
 
         for attempt_num in range(1, self.max_attempts + 1):
             self.logger.update_meta(current_turn=attempt_num)
@@ -330,7 +345,10 @@ class AttackRunner:
                     alias_step=alias_step,
                     alias_token=alias_token,
                     hint_detected_turn=hint_detected_turn,
-                    hint_used_turn=hint_used_turn
+                    hint_used_turn=hint_used_turn,
+                    transformation_recovery_active=transformation_recovery_active,
+                    transformation_format_index=len(transformation_formats_tried),
+                    transformation_formats_tried=transformation_formats_tried
                 )
                 prompt, decision_info = self.strategy.generate_prompt(state)
             else:
@@ -366,7 +384,11 @@ class AttackRunner:
                 "oscillation_detected": decision_info.get("oscillation_detected", False),
                 "recovery_reason": decision_info.get("recovery_reason", ""),
                 "forced_transformation_format": decision_info.get("forced_transformation_format", ""),
-                "previous_prompt_fingerprint": decision_info.get("previous_prompt_fingerprint", "")
+                "previous_prompt_fingerprint": decision_info.get("previous_prompt_fingerprint", ""),
+                "transformation_recovery_active": transformation_recovery_active if self.strategy_name == "autonomous" else False,
+                "transformation_format_index": len(transformation_formats_tried) if self.strategy_name == "autonomous" else 0,
+                "transformation_formats_tried": transformation_formats_tried if self.strategy_name == "autonomous" else [],
+                "generic_probe_suppressed": decision_info.get("planner_ignored_hint", False) and (transformation_recovery_active or pending_forced_tactic == "transformation_hint") if self.strategy_name == "autonomous" else False
             }
             
             # Record if a pending forced tactic was actually used
@@ -454,6 +476,8 @@ class AttackRunner:
                     if last_hint_type == "alias_hint":
                         alias_plan_active = True
                         alias_step = "establish_alias"
+                    elif last_hint_type == "transformation_hint":
+                        transformation_recovery_active = True
             
             if self.strategy_name == "autonomous" and decision_info.get("strategy_name"):
                 if not solved:
@@ -461,6 +485,8 @@ class AttackRunner:
                         state.failed_strategy_names.append(decision_info["strategy_name"])
                     if decision_info["strategy_name"] not in state.tactics_already_tried:
                         state.tactics_already_tried.append(decision_info["strategy_name"])
+                    if decision_info["strategy_name"] in [t["name"] for t in CONCRETE_TRANSFORMATION_TACTICS] and decision_info["strategy_name"] not in transformation_formats_tried:
+                        transformation_formats_tried.append(decision_info["strategy_name"])
             
             previous_attempts.append(PreviousAttempt(
                 attempt_number=attempt_num,

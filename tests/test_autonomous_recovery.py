@@ -34,12 +34,14 @@ def test_transformation_hint_forces_concrete_format(mock_planner_class):
     state = ObservationState(
         level_id=1, title="Test", public_description="Desc", current_turn=2, max_attempts=8,
         previous_attempts=[PreviousAttempt(attempt_number=1, prompt="Hello", response="hint", outcome_type="transformation_hint", solved=False, observation_summary="rejected", selected_tactic="generic")],
-        last_hint_type="transformation_hint", pending_forced_tactic="transformation_hint"
+        last_hint_type="transformation_hint", pending_forced_tactic="transformation_hint",
+        transformation_recovery_active=True, transformation_formats_tried=[]
     )
     prompt, decision_info = strategy.generate_prompt(state)
     assert decision_info["controller_override_used"] is True
     assert decision_info["forced_transformation_format"] in [t["name"] for t in CONCRETE_TRANSFORMATION_TACTICS]
     assert prompt in [t["prompt"] for t in CONCRETE_TRANSFORMATION_TACTICS]
+    assert decision_info["generic_probe_suppressed"] is True
 
 @patch("llm_guardian.redteam.local_lab.attack_agent.LLMAttackPlanner")
 @patch.dict(os.environ, {"GROQ_API_KEY": "fake_key"})
@@ -82,10 +84,12 @@ def test_proper_form_switches_format(mock_planner_class):
             PreviousAttempt(attempt_number=1, prompt="Hello", response="hint", outcome_type="transformation_hint", solved=False, observation_summary="rejected", selected_tactic="generic"),
             PreviousAttempt(attempt_number=2, prompt=first_format["prompt"], response="Your request lacks the proper form.", outcome_type="filtered", solved=False, observation_summary="rejected", selected_tactic=first_format["name"])
         ],
-        last_hint_type="transformation_hint", pending_forced_tactic="transformation_hint"
+        last_hint_type="transformation_hint", pending_forced_tactic=None,
+        transformation_recovery_active=True, transformation_formats_tried=[first_format["name"]]
     )
     prompt, decision_info = strategy.generate_prompt(state)
     assert decision_info["controller_override_used"] is True
     assert decision_info["forced_transformation_format"] in [t["name"] for t in CONCRETE_TRANSFORMATION_TACTICS]
     assert decision_info["forced_transformation_format"] != first_format["name"]
     assert prompt != first_format["prompt"]
+    assert decision_info["generic_probe_suppressed"] is True
