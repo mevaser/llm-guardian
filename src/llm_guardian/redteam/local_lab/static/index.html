@@ -20,8 +20,9 @@
                 <!-- Levels will be injected here -->
             </nav>
             
-            <div style="margin-top: auto; padding-top: 20px;">
+            <div style="margin-top: auto; padding-top: 20px; display: flex; flex-direction: column; gap: 10px;">
                 <a href="/admin" class="primary-btn" style="text-decoration: none; display: block; text-align: center;" title="View attack-agent runs, logs, decisions, and reports">Admin / Agent Runs</a>
+                <a href="/evals" class="primary-btn" style="text-decoration: none; display: block; text-align: center;" title="View Evaluation Reports">Eval Reports</a>
             </div>
         </aside>
 
@@ -51,6 +52,9 @@
                             <option value="deterministic" selected>Deterministic</option>
                             <option value="groq_live">Groq Live</option>
                         </select>
+                    </div>
+                    <div style="font-size: 0.8em; color: #888; margin-top: 5px; margin-bottom: 10px;">
+                        Response Mode controls how the Wizard target responds. Gemini is configured separately as the autonomous planner provider through .env.
                     </div>
                     <div class="input-group">
                         <input type="text" id="prompt-input" placeholder="Enter your prompt here..." disabled autocomplete="off">

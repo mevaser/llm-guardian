@@ -41,11 +41,16 @@ class Attempt(BaseModel):
     solved: bool
 
 class PreviousAttempt(BaseModel):
+    attempt_number: int = 1
     prompt: str
     response: str
     outcome_type: str
     solved: bool
     observation_summary: str
+    detected_hint_type: Optional[str] = None
+    selected_tactic: Optional[str] = None
+    error_category: Optional[str] = None
+    is_duplicate: bool = False
 
 class SessionState(BaseModel):
     session_id: str
@@ -72,6 +77,11 @@ class ObservationState(BaseModel):
     alias_token: str = "PUBLIC_TOKEN"
     hint_detected_turn: int = 0
     hint_used_turn: int = 0
+    transformation_recovery_active: bool = False
+    transformation_format_index: int = 0
+    transformation_formats_tried: List[str] = Field(default_factory=list)
+    recovery_context: Dict[str, Any] = Field(default_factory=dict)
+    replan_requested: bool = False
 
 class PlannerDecision(BaseModel):
     strategy_name: str

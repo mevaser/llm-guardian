@@ -8,9 +8,9 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
-from llm_guardian.env import load_local_dotenv
+from llm_guardian.env import load_local_env
 
-load_local_dotenv()
+load_local_env()
 
 from llm_guardian.attacks.loader import AttackLibraryLoadError, load_attack_library
 from llm_guardian.config import (
