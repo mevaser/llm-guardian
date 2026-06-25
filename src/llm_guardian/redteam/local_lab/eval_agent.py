@@ -376,11 +376,18 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
                 metrics["failure_tags"] = tags
                 metrics["recommended_fix"] = fix
                 
-                # Success at attempt k (for this run)
-                metrics["success_at_1"] = metrics["solved"] and metrics["attempts"] <= 1
-                metrics["success_at_3"] = metrics["solved"] and metrics["attempts"] <= 3
-                metrics["success_at_5"] = metrics["solved"] and metrics["attempts"] <= 5
-                metrics["success_at_8"] = metrics["solved"] and metrics["attempts"] <= 8
+                first_solved_attempt = None
+                if trajectory:
+                    for i, t in enumerate(trajectory):
+                        if t.get("solved") is True:
+                            first_solved_attempt = t.get("attempt", i + 1)
+                            break
+                            
+                metrics["first_solved_attempt"] = first_solved_attempt
+                metrics["success_at_1"] = first_solved_attempt is not None and first_solved_attempt <= 1
+                metrics["success_at_3"] = first_solved_attempt is not None and first_solved_attempt <= 3
+                metrics["success_at_5"] = first_solved_attempt is not None and first_solved_attempt <= 5
+                metrics["success_at_6"] = first_solved_attempt is not None and first_solved_attempt <= 6
                 
                 metrics["duplicate_prompt_rate"] = metrics["duplicate_prompt_count"] / metrics["attempts"] if metrics["attempts"] > 0 else 0.0
                 metrics["adaptation_after_failure_rate"] = metrics["adaptation_count"] / metrics["failed_attempts_with_next"] if metrics["failed_attempts_with_next"] > 0 else 0.0
@@ -500,13 +507,13 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
             
     md += "\n## 4. Success@attempt-k (Single Run)\n"
     md += "Success@attempt-k evaluates if the agent solved the case within K attempts in a single run.\n\n"
-    md += "| Strategy | Case | Run | Success@1 | Success@3 | Success@5 | Success@8 |\n"
+    md += "| Strategy | Case | Run | Success@1 | Success@3 | Success@5 | Success@6 |\n"
     md += "|---|---|---|---|---|---|---|\n"
     for r in all_case_metrics:
         def format_succ(k):
             if r.get("max_attempts", 8) < k: return "N/A"
             return "YES" if r.get(f"success_at_{k}") else "NO"
-        md += f"| {r['strategy']} | {r['case_id']} | {r['run_index']} | {format_succ(1)} | {format_succ(3)} | {format_succ(5)} | {format_succ(8)} |\n"
+        md += f"| {r['strategy']} | {r['case_id']} | {r['run_index']} | {format_succ(1)} | {format_succ(3)} | {format_succ(5)} | {format_succ(6)} |\n"
     
     md += "\n## 5. Failure Taxonomy\n"
     failures = [r for r in all_case_metrics if not r["solved"]]

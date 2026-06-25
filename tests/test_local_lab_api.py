@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from fastapi.testclient import TestClient
 
 from llm_guardian.redteam.local_lab.app import app, sessions
@@ -116,6 +116,7 @@ def mock_runs_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         monkeypatch.setattr("llm_guardian.redteam.local_lab.app.RUNS_DIR", tmp_path)
+        monkeypatch.setattr("llm_guardian.redteam.local_lab.app.EVALS_DIR", tmp_path)
         yield tmp_path
 
 def test_admin_runs_empty(mock_runs_dir):
@@ -255,7 +256,9 @@ def test_admin_run_start(mock_runs_dir):
     data = response.json()
     assert "run_id" in data
     assert data["status"] == "running"
-    assert "output_dir" in data
+    assert "eval_id" in data
+    assert "eval_dir" in data
+    assert "run_dir" in data
 
     run_id = data["run_id"]
     
@@ -291,6 +294,7 @@ def test_admin_run_start_autonomous_gemini(mock_background, mock_runs_dir):
         assert args[2] == "deterministic"
         assert args[3] == 6  # max_attempts
         assert args[4] == 0  # delay_ms
+        assert args[8].endswith("runs") # base_dir
     finally:
         if "GEMINI_API_KEY" in os.environ:
             del os.environ["GEMINI_API_KEY"]
@@ -463,3 +467,244 @@ def test_get_eval_fallback(mock_evals_dir):
     assert cr["success_at_3"] is True
     assert cr["success_at_5"] is True
     assert cr["success_at_6"] is True
+
+def test_get_eval_legacy_run(mock_evals_dir, mock_runs_dir):
+    # Set up a legacy run
+    run_id = "test_legacy_12345"
+    run_dir = mock_runs_dir / run_id
+    run_dir.mkdir(parents=True)
+    
+    import json
+    with open(run_dir / "run_meta.json", "w", encoding="utf-8") as f_meta:
+        f_meta.write('{"run_id": "test_legacy_12345", "strategy": "autonomous", "levels_attempted": 1, "levels_solved": 1, "current_level": "test_1"}')
+        
+    with open(run_dir / "trajectory.json", "w", encoding="utf-8") as f_traj:
+        f_traj.write('[{"solved": false}, {"solved": true}]')
+        
+    # Check if get_evals lists it
+    from fastapi.testclient import TestClient
+    from llm_guardian.redteam.local_lab.app import app
+    client = TestClient(app)
+    
+    response = client.get("/api/evals?include_debug=true")
+    assert response.status_code == 200
+    evals = response.json()
+    
+    assert any(e["eval_id"] == "admin_run_test_leg" for e in evals)
+    
+    # Check get_eval can fetch it
+    response = client.get("/api/evals/admin_run_test_leg")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["eval_id"] == "admin_run_test_leg"
+    assert data["cases_evaluated"] == 1
+    assert data["case_results"][0]["first_solved_attempt"] == 2
+    assert data["case_results"][0]["success_at_1"] is False
+    assert data["case_results"][0]["success_at_3"] is True
+
+
+def test_get_eval_multilevel_admin_run(mock_evals_dir):
+    eval_dir = mock_evals_dir / "test_eval_multi"
+    eval_dir.mkdir()
+
+    runs_dir = eval_dir / "runs"
+    runs_dir.mkdir()
+
+    run_dir = runs_dir / "run_1"
+    run_dir.mkdir()
+
+    meta_path = run_dir / "run_meta.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        import json
+        json.dump({
+            "run_id": "run_1",
+            "strategy": "autonomous",
+            "current_level": "8",
+            "levels_attempted": 8,
+            "levels_solved": 4,
+            "total_attempts": 31,
+            "refused_count": 0,
+            "duplicate_prompt_count": 0,
+            "start_time": "2026-01-01T00:00:00Z",
+            "end_time": "2026-01-01T00:00:10Z",
+            "status": "completed"
+        }, f)
+
+    traj_path = run_dir / "trajectory.json"
+    with open(traj_path, "w", encoding="utf-8") as f:
+        traj = []
+        for i in range(1, 9):
+            if i <= 4:
+                traj.append({"level_id": str(i), "attempt": 1, "solved": False})
+                traj.append({"level_id": str(i), "attempt": 2, "solved": True})
+            else:
+                for j in range(6):
+                    traj.append({"level_id": str(i), "attempt": j+1, "solved": False})
+        json.dump(traj, f)
+
+    from fastapi.testclient import TestClient
+    from llm_guardian.redteam.local_lab.app import app
+    client = TestClient(app)
+
+    response = client.get("/api/evals/test_eval_multi")
+    assert response.status_code == 200
+    data = response.json()
+    assert "case_results" in data
+    assert data["cases_evaluated"] == 8
+    assert len(data["case_results"]) == 8
+    
+    # Check Success@K computation
+    cr1 = next(cr for cr in data["case_results"] if cr["case_id"] == "1")
+    assert cr1["solved"] is True
+    assert cr1["attempts"] == 2
+    assert cr1["first_solved_attempt"] == 2
+    assert cr1["success_at_1"] is False
+    assert cr1["success_at_3"] is True
+    assert cr1["success_at_6"] is True
+
+    cr5 = next(cr for cr in data["case_results"] if cr["case_id"] == "5")
+    assert cr5["solved"] is False
+    assert cr5["attempts"] == 6
+    assert cr5["first_solved_attempt"] is None
+    assert cr5["success_at_6"] is False
+
+    response_list = client.get("/api/evals")
+    eval_item = next((e for e in response_list.json() if e["eval_id"] == "test_eval_multi"), None)
+    assert eval_item is not None
+    assert eval_item["eval_type"] == "Core8 Benchmark"
+    assert eval_item["cases_evaluated"] == 8
+    assert eval_item["levels_solved"] == 4
+
+
+def test_get_evals_filtering(mock_evals_dir):
+    # 1. Core8 Benchmark (Pure autonomous, 8 cases)
+    c8_dir = mock_evals_dir / "test_eval_c8"
+    c8_dir.mkdir()
+    c8_runs = c8_dir / "runs"
+    c8_runs.mkdir()
+    c8_r1 = c8_runs / "run_1"
+    c8_r1.mkdir()
+    with open(c8_r1 / "run_meta.json", "w", encoding="utf-8") as f:
+        import json
+        json.dump({"strategy": "autonomous", "status": "completed", "levels_attempted": 8, "levels_solved": 4, "total_attempts": 31}, f)
+
+    # 2. Autonomous Multi-Level Run (Pure autonomous, 4 cases)
+    m4_dir = mock_evals_dir / "test_eval_m4"
+    m4_dir.mkdir()
+    m4_runs = m4_dir / "runs"
+    m4_runs.mkdir()
+    m4_r1 = m4_runs / "run_1"
+    m4_r1.mkdir()
+    with open(m4_r1 / "run_meta.json", "w", encoding="utf-8") as f:
+        import json
+        json.dump({"strategy": "autonomous", "status": "completed", "levels_attempted": 4, "total_attempts": 10}, f)
+
+    # 3. Scripted Baseline (Pure scripted, 8 cases)
+    s8_dir = mock_evals_dir / "test_eval_s8"
+    s8_dir.mkdir()
+    s8_runs = s8_dir / "runs"
+    s8_runs.mkdir()
+    s8_r1 = s8_runs / "run_1"
+    s8_r1.mkdir()
+    with open(s8_r1 / "run_meta.json", "w", encoding="utf-8") as f:
+        import json
+        json.dump({"strategy": "scripted", "status": "completed", "levels_attempted": 8, "total_attempts": 8}, f)
+
+    # 4. Smoke / Single-Level Run (1 case)
+    sm1_dir = mock_evals_dir / "test_eval_sm1"
+    sm1_dir.mkdir()
+    sm1_runs = sm1_dir / "runs"
+    sm1_runs.mkdir()
+    sm1_r1 = sm1_runs / "run_1"
+    sm1_r1.mkdir()
+    with open(sm1_r1 / "run_meta.json", "w", encoding="utf-8") as f:
+        import json
+        json.dump({"strategy": "autonomous", "status": "completed", "levels_attempted": 1, "total_attempts": 5}, f)
+
+    # 5. Partial / Running (Status != completed)
+    r_dir = mock_evals_dir / "test_eval_running"
+    r_dir.mkdir()
+    r_runs = r_dir / "runs"
+    r_runs.mkdir()
+    r_r1 = r_runs / "run_1"
+    r_r1.mkdir()
+    with open(r_r1 / "run_meta.json", "w", encoding="utf-8") as f:
+        import json
+        json.dump({"strategy": "autonomous", "status": "running", "levels_attempted": 8, "total_attempts": 10}, f)
+
+    # 6. Mixed Strategy Eval (Contains both)
+    mixed_dir = mock_evals_dir / "test_eval_mixed"
+    mixed_dir.mkdir()
+    mixed_runs = mixed_dir / "runs"
+    mixed_runs.mkdir()
+    mixed_r1 = mixed_runs / "run_1"
+    mixed_r1.mkdir()
+    with open(mixed_r1 / "run_meta.json", "w", encoding="utf-8") as f:
+        import json
+        json.dump({"strategy": "autonomous", "status": "completed", "levels_attempted": 4}, f)
+    mixed_r2 = mixed_runs / "run_2"
+    mixed_r2.mkdir()
+    with open(mixed_r2 / "run_meta.json", "w", encoding="utf-8") as f:
+        import json
+        json.dump({"strategy": "scripted", "status": "completed", "levels_attempted": 4}, f)
+
+    # 7. Empty folder (Broken/No cases)
+    empty_dir = mock_evals_dir / "test_eval_empty"
+    empty_dir.mkdir()
+
+    from fastapi.testclient import TestClient
+    from llm_guardian.redteam.local_lab.app import app
+    client = TestClient(app)
+
+    # Default /api/evals
+    response = client.get("/api/evals")
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Empty dir should not be visible by default
+    eval_ids = [e["eval_id"] for e in data]
+    assert "test_eval_empty" not in eval_ids
+    assert len(eval_ids) == 6
+
+    def get_eval(eid):
+        return next((e for e in data if e["eval_id"] == eid), None)
+
+    # Check Core8
+    c8 = get_eval("test_eval_c8")
+    assert c8["eval_type"] == "Core8 Benchmark"
+    assert c8["recommended_demo"] is True
+    assert c8["source"] == "eval_folder"
+
+    # Check Multi-Level
+    m4 = get_eval("test_eval_m4")
+    assert m4["eval_type"] == "Autonomous Multi-Level Run"
+    assert m4["recommended_demo"] is True
+
+    # Check Scripted
+    s8 = get_eval("test_eval_s8")
+    assert s8["eval_type"] == "Scripted Baseline"
+    assert s8["recommended_demo"] is False
+
+    # Check Smoke
+    sm1 = get_eval("test_eval_sm1")
+    assert sm1["eval_type"] == "Smoke / Single-Level Run"
+    assert sm1["recommended_demo"] is False
+
+    # Check Partial
+    running = get_eval("test_eval_running")
+    assert running["eval_type"] == "Partial / Running"
+    assert running["recommended_demo"] is False
+
+    # Check Mixed
+    mixed = get_eval("test_eval_mixed")
+    assert mixed["eval_type"] == "Mixed Strategy Eval"
+    assert mixed["recommended_demo"] is False
+    assert "autonomous" in mixed["strategies"]
+    assert "scripted" in mixed["strategies"]
+
+    # Check include_debug
+    response_all = client.get("/api/evals?include_debug=true")
+    assert response_all.status_code == 200
+    data_all = response_all.json()
+    eval_ids_all = [e["eval_id"] for e in data_all]
+    assert "test_eval_empty" in eval_ids_all
