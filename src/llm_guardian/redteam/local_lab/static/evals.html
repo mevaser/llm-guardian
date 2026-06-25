@@ -57,7 +57,9 @@
             <a href="/admin" class="btn" style="width: 100%; text-align: center; background: #094771; box-sizing: border-box;">Go to Admin Runs</a>
         </div>
         
+        
         <div class="run-list" style="border-top: none; padding-top: 0; margin-top: 0;">
+
             <h3 style="margin-top: 0;">Eval Runs</h3>
             <div id="evals-list">Loading...</div>
         </div>
@@ -89,21 +91,29 @@ python -m llm_guardian.redteam.local_lab.eval_agent `
             <div class="tabs">
                 <div class="tab active" onclick="showTab(event, 'summary')">Summary & Metrics</div>
                 <div class="tab" onclick="showTab(event, 'case-results')">Case Results</div>
+                <div class="tab" onclick="showTab(event, 'trajectory')">Attempt Transcript</div>
                 <div class="tab" onclick="showTab(event, 'report')">Markdown Report</div>
                 <div class="tab" onclick="showTab(event, 'failures')">Failure Cases</div>
             </div>
             
             <div id="tab-summary" class="tab-content">
                 <div class="card" id="summary-metrics">
-                    <h3>Aggregated Metrics (Autonomous Strategy)</h3>
+                    <h3 id="agg-metrics-title">Aggregated Metrics</h3>
+                    <div id="readable-summary" style="margin-bottom: 20px; line-height: 1.5; color: #d4d4d4;"></div>
                     <div class="grid-status" id="agg-metrics-grid"></div>
                     <div id="taxonomy-summary" style="margin-top: 20px;"></div>
                 </div>
             </div>
             
             <div id="tab-case-results" class="tab-content" style="display:none;">
+                <p style="font-size: 0.9em; color: #d4d4d4; margin-bottom: 15px;">Solved means the case was solved within the allowed attempts. Success@1 means it was solved on the first attempt. Success@3 means it was solved within the first three attempts.</p>
                 <button class="btn" onclick="refreshTab('case-results')" style="margin-bottom: 10px;">Refresh Case Results</button>
                 <div id="case-results-content">Loading...</div>
+            </div>
+            
+            <div id="tab-trajectory" class="tab-content" style="display:none;">
+                <button class="btn" onclick="refreshTab('trajectory')" style="margin-bottom: 10px;">Refresh Transcript</button>
+                <div id="trajectory-content">Loading...</div>
             </div>
             
             <div id="tab-report" class="tab-content" style="display:none;">
