@@ -67,6 +67,10 @@ def read_admin():
 def read_evals():
     return FileResponse(str(STATIC_DIR / "evals.html"))
 
+@app.get("/presentation")
+def read_presentation():
+    return FileResponse(str(STATIC_DIR / "presentation.html"))
+
 @app.get("/api/levels", response_model=List[LevelInfo])
 def get_levels():
     """Returns a list of all available levels."""

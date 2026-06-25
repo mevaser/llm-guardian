@@ -20,6 +20,12 @@ def test_get_levels():
     assert "opening_message" in data[0]
     assert data[7]["level_id"] == 8
 
+def test_presentation_route():
+    response = client.get("/presentation")
+    assert response.status_code == 200
+    assert "LLM Guardian" in response.text
+    assert "Red-Team Lab" in response.text
+
 def test_get_debug_config():
     response = client.get("/api/debug/config")
     assert response.status_code == 200
