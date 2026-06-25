@@ -317,11 +317,13 @@ function renderFailures(failures) {
         return;
     }
 
-    let html = '<table><tr><th>Strategy</th><th>Case</th><th>Failure Reason</th><th>Observed Failure</th><th>Recommendation</th></tr>';
+    let html = '<table><tr><th>Strategy</th><th>Case</th><th>Wizard Opening Prompt</th><th>Failure Reason</th><th>Observed Failure</th><th>Recommendation</th></tr>';
     failures.forEach(f => {
+        const wizard = (f.wizard_opening_prompt && f.wizard_opening_prompt !== '-') ? f.wizard_opening_prompt.replace(/</g, "&lt;").replace(/>/g, "&gt;") : '-';
         html += `<tr>
             <td>${f.strategy}</td>
             <td>${f.case_id}</td>
+            <td><pre style="margin:0;max-height:100px;overflow:auto;font-size:0.85em;background:transparent;border:none;">${wizard}</pre></td>
             <td>${f.main_failure_reason}</td>
             <td>${f.observed_failure}</td>
             <td>${f.recommended_controller_fix}</td>
@@ -341,10 +343,22 @@ function renderTrajectory(traj) {
         const solvedStr = t.solved ? '<span style="color:#4CAF50">YES</span>' : '<span style="color:#f44336">NO</span>';
         const promptRaw = t.prompt || t.selected_prompt || '';
         const safePrompt = promptRaw.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        
+        let promptContent = '';
+        if (t.attempt === 1 && t.wizard_opening_prompt && t.wizard_opening_prompt !== '-') {
+             const safeWizard = t.wizard_opening_prompt.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+             promptContent += `<div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #555;">
+                 <strong style="color: #9cdcfe;">Wizard Opening Prompt:</strong><br/>
+                 <pre style="margin:0;white-space:pre-wrap;font-size:0.9em;background:transparent;border:none;">${safeWizard}</pre>
+             </div>`;
+        }
+        promptContent += `<strong style="color: #ce9178;">Attack Prompt:</strong><br/>
+             <pre style="margin:0;max-height:150px;overflow:auto;white-space:pre-wrap;font-size:0.9em;background:transparent;border:none;padding:0;">${safePrompt}</pre>`;
+
         html += `<tr>
             <td>${t.level_id || t.current_level || 'Unknown'}</td>
             <td>${t.attempt || 'N/A'}</td>
-            <td><pre style="margin:0;max-height:150px;overflow:auto;background:transparent;border:none;padding:0;">${safePrompt}</pre></td>
+            <td>${promptContent}</td>
             <td>${solvedStr}</td>
             <td>${t.run_id || 'N/A'}</td>
         </tr>`;

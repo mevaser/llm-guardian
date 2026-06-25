@@ -126,10 +126,11 @@ class ObservabilityLogger:
         }
         self._append_jsonl("errors.jsonl", record)
         
-    def add_trajectory_attempt(self, level_id: int, prompt: str, response: str, solved: bool, error: Optional[str] = None):
+    def add_trajectory_attempt(self, level_id: int, prompt: str, response: str, solved: bool, error: Optional[str] = None, wizard_opening_prompt: str = "-"):
         attempt = Redactor.redact_dict({
             "level_id": level_id,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "wizard_opening_prompt": wizard_opening_prompt,
             "prompt": prompt,
             "response": response,
             "solved": solved,
@@ -210,6 +211,11 @@ class ObservabilityLogger:
             # Group events by level
             for lvl in sorted(level_status.keys()):
                 md += f"### Level {lvl}\n"
+                
+                lvl_traj = [t for t in self.trajectory if t.get("level_id") == lvl]
+                wizard_prompt = lvl_traj[0].get("wizard_opening_prompt", "-") if lvl_traj else "-"
+                md += f"#### Wizard Opening Prompt\n{wizard_prompt}\n\n"
+                
                 lvl_events = [e for e in events if e.get("level_id") == lvl]
                 
                 # Extract planner details from first decision
