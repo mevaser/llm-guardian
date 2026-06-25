@@ -437,7 +437,32 @@ function refreshTab(tabName) {
     }
 }
 
+function loadSidebarState() {
+    const isCollapsed = localStorage.getItem('wizardLabEvalsSidebarCollapsed') === 'true';
+    setSidebarCollapsed(isCollapsed);
+}
+
+function toggleSidebar() {
+    const isCollapsed = document.body.classList.contains('sidebar-collapsed');
+    setSidebarCollapsed(!isCollapsed);
+}
+
+function setSidebarCollapsed(collapsed) {
+    if (collapsed) {
+        document.body.classList.add('sidebar-collapsed');
+        localStorage.setItem('wizardLabEvalsSidebarCollapsed', 'true');
+        const btn = document.getElementById('sidebar-toggle');
+        if(btn) btn.innerText = 'Show Sidebar';
+    } else {
+        document.body.classList.remove('sidebar-collapsed');
+        localStorage.setItem('wizardLabEvalsSidebarCollapsed', 'false');
+        const btn = document.getElementById('sidebar-toggle');
+        if(btn) btn.innerText = 'Hide Sidebar';
+    }
+}
+
 // Init
+loadSidebarState();
 fetchEvals();
 
 // Removed planner status and Gemini run button logic
