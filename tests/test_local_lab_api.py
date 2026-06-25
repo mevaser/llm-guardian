@@ -447,8 +447,8 @@ def test_get_eval_fallback(mock_evals_dir):
     traj_path = run_dir / "trajectory.json"
     with open(traj_path, "w", encoding="utf-8") as f:
         json.dump([
-            {"solved": False},
-            {"solved": True}
+            {"solved": False, "level_id": 1, "wizard_opening_prompt": "I am a wizard."},
+            {"solved": True, "level_id": 1, "wizard_opening_prompt": "I am a wizard."}
         ], f)
         
     response = client.get("/api/evals/test_eval")
@@ -467,6 +467,28 @@ def test_get_eval_fallback(mock_evals_dir):
     assert cr["success_at_3"] is True
     assert cr["success_at_5"] is True
     assert cr["success_at_6"] is True
+    assert cr["wizard_opening_prompt"] == "I am a wizard."
+
+def test_get_eval_fallback_missing_wizard_prompt(mock_evals_dir):
+    eval_dir = mock_evals_dir / "test_eval_missing_prompt"
+    eval_dir.mkdir()
+    runs_dir = eval_dir / "runs"
+    runs_dir.mkdir()
+    run_dir = runs_dir / "run_1"
+    run_dir.mkdir()
+    
+    with open(run_dir / "run_meta.json", "w", encoding="utf-8") as f:
+        json.dump({"run_id": "run_1", "strategy": "autonomous", "current_level": "1", "levels_solved": 1}, f)
+        
+    with open(run_dir / "trajectory.json", "w", encoding="utf-8") as f:
+        # Backward compatibility test
+        json.dump([{"level_id": 1, "solved": True}], f)
+        
+    response = client.get("/api/evals/test_eval_missing_prompt")
+    assert response.status_code == 200
+    data = response.json()
+    cr = data["case_results"][0]
+    assert cr["wizard_opening_prompt"] == "-"
 
 def test_get_eval_legacy_run(mock_evals_dir, mock_runs_dir):
     # Set up a legacy run

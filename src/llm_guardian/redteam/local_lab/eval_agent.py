@@ -246,11 +246,14 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
                     "failed_attempts_with_next": 0,
                     "hints_with_next": 0,
                     "hints_used": 0,
-                    "repeated_direct_request": False
+                    "repeated_direct_request": False,
+                    "wizard_opening_prompt": "-"
                 }
                 
                 for attempt in trajectory:
                     if attempt["level_id"] == lvl:
+                        if metrics["wizard_opening_prompt"] == "-":
+                            metrics["wizard_opening_prompt"] = attempt.get("wizard_opening_prompt", "-")
                         metrics["attempts"] += 1
                         if attempt.get("solved"):
                             metrics["solved"] = True
@@ -407,6 +410,7 @@ def run_eval(strategies: List[str], cases: List[Dict[str, Any]], runs: int, dela
                         "run_id": run_id,
                         "level_id": lvl,
                         "case_id": case_id,
+                        "wizard_opening_prompt": metrics["wizard_opening_prompt"],
                         "main_failure_reason": metrics["main_failure_reason"],
                         "observed_failure": f"Failed after {metrics['attempts']} attempts.",
                         "suggested_eval_case": f"{case_id}_regression",

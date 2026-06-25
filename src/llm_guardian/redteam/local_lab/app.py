@@ -543,14 +543,17 @@ def _build_metrics_from_runs(run_dirs: list[Path]) -> dict:
                 
             for lvl, attempts_list in level_groups.items():
                 first_solved_attempt = None
+                wizard_prompt = "-"
                 for i, t in enumerate(attempts_list):
-                    if t.get("solved") is True:
+                    if t.get("solved") is True and first_solved_attempt is None:
                         first_solved_attempt = t.get("attempt", i + 1)
-                        break
+                    if t.get("wizard_opening_prompt", "-") != "-":
+                        wizard_prompt = t.get("wizard_opening_prompt")
                         
                 case_result = {
                     "strategy": strategy,
                     "case_id": lvl,
+                    "wizard_opening_prompt": wizard_prompt,
                     "solved": first_solved_attempt is not None,
                     "attempts": len(attempts_list),
                     "first_solved_attempt": first_solved_attempt,
@@ -568,14 +571,17 @@ def _build_metrics_from_runs(run_dirs: list[Path]) -> dict:
             if run_levels_attempted == 1:
                 # One case, legacy
                 first_solved_attempt = None
+                wizard_prompt = "-"
                 for i, t in enumerate(traj_data):
-                    if t.get("solved") is True:
+                    if t.get("solved") is True and first_solved_attempt is None:
                         first_solved_attempt = t.get("attempt", i + 1)
-                        break
+                    if t.get("wizard_opening_prompt", "-") != "-":
+                        wizard_prompt = t.get("wizard_opening_prompt")
                         
                 case_result = {
                     "strategy": strategy,
                     "case_id": str(meta.get("current_level", "unknown")),
+                    "wizard_opening_prompt": wizard_prompt,
                     "solved": meta.get("levels_solved", 0) > 0,
                     "attempts": meta.get("total_attempts", len(traj_data)),
                     "first_solved_attempt": first_solved_attempt,
@@ -854,6 +860,8 @@ def get_eval_artifact(eval_id: str, artifact: str):
         for c in cases:
             sol = "YES" if c.get("solved") else "NO"
             lines.append(f"### Case {c.get('case_id')} ({c.get('strategy')})")
+            if c.get("wizard_opening_prompt") and c.get("wizard_opening_prompt") != "-":
+                lines.append(f"#### Wizard Opening Prompt\n{c.get('wizard_opening_prompt')}\n")
             lines.append(f"- Solved: {sol}")
             lines.append(f"- Attempts: {c.get('attempts')}")
             if not c.get("solved"):

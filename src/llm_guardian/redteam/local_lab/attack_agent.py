@@ -359,6 +359,7 @@ class AttackRunner:
         try:
             start_resp = self.adapter.start_session(level_id)
             session_id = start_resp["session_id"]
+            wizard_opening_prompt = start_resp.get("level_info", {}).get("opening_message", "-")
         except Exception as e:
             self.logger.log_error("attack_agent", f"Failed to start session for level {level_id}: {str(e)}")
             return False
@@ -486,7 +487,7 @@ class AttackRunner:
                     submit_resp = self.adapter.submit_prompt(session_id, prompt, self.response_mode)
                 except Exception as e:
                     self.logger.log_error("attack_agent", f"Failed to submit prompt: {str(e)}")
-                    self.logger.add_trajectory_attempt(level_id, prompt, "", False, error=str(e))
+                    self.logger.add_trajectory_attempt(level_id, prompt, "", False, error=str(e), wizard_opening_prompt=wizard_opening_prompt)
                     break
 
             response = submit_resp.get("response", "")
@@ -504,7 +505,7 @@ class AttackRunner:
             }
             self.logger.log_event("wizard_lab_api", "wizard_response", **wizard_payload)
             self._sleep_if_needed()
-            self.logger.add_trajectory_attempt(level_id, prompt, response, solved)
+            self.logger.add_trajectory_attempt(level_id, prompt, response, solved, wizard_opening_prompt=wizard_opening_prompt)
 
             if submit_resp.get("composer_used"):
                 self.logger.log_event("groq_composer", "composer_used", level_id=level_id, session_id=session_id)
