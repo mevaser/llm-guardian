@@ -38,6 +38,9 @@ def test_demo_scan_example_artifacts_exist_with_required_content() -> None:
     assert trajectory_payload["scan_id"]
     assert trajectory_payload["target_name"] == "demo-vulnerable-rag"
     assert trajectory_payload["target_profile"]["target_name"] == "demo-vulnerable-rag"
+    scenario_source = trajectory_payload["target_profile"]["scenario_source"]
+    assert scenario_source == "data/attack_scenarios.yaml"
+    assert (REPOSITORY_ROOT / scenario_source).is_file()
     assert trajectory_payload["agent_plan"]["scenario_count"] == 8
     assert trajectory_payload["agent_trace"]
     assert len(trajectory_payload["adaptive_probes"]) == 2

@@ -21,6 +21,8 @@ def test_security_scan_agent_runs_demo_vulnerable_rag_end_to_end(tmp_path: Path)
     assert len(result.scenario_results) == 8
     assert result.agent_plan is not None
     assert result.agent_plan.target_name == "demo-vulnerable-rag"
+    assert result.target_profile["scenario_source"] == "data/attack_scenarios.yaml"
+    assert result.agent_plan.scenario_source == "data/attack_scenarios.yaml"
     assert result.agent_plan.scenario_count == 8
     assert len(result.agent_plan.selected_scenario_ids) == 8
     assert result.adaptive_probes
@@ -50,6 +52,8 @@ def test_security_scan_agent_runs_demo_vulnerable_rag_end_to_end(tmp_path: Path)
 
     trajectory_payload = json.loads(trajectory_path.read_text(encoding="utf-8"))
     assert trajectory_payload["target_name"] == "demo-vulnerable-rag"
+    assert trajectory_payload["target_profile"]["scenario_source"] == "data/attack_scenarios.yaml"
+    assert trajectory_payload["agent_plan"]["scenario_source"] == "data/attack_scenarios.yaml"
     assert len(trajectory_payload["scenarios"]) == 8
     assert trajectory_payload["agent_plan"]["scenario_count"] == 8
     assert trajectory_payload["agent_trace"]
@@ -60,6 +64,7 @@ def test_security_scan_agent_runs_demo_vulnerable_rag_end_to_end(tmp_path: Path)
     assert "## Agent Plan" in report_text
     assert "## Agent Execution Trace" in report_text
     assert "## Adaptive Probes" in report_text
+    assert "- scenario_source: data/attack_scenarios.yaml" in report_text
 
 
 def test_security_scan_agent_uses_generated_scenario_metadata_when_present(tmp_path: Path) -> None:

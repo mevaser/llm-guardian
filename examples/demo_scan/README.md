@@ -14,6 +14,10 @@ trajectory.json is the machine-readable evidence log.
 
 The sample artifacts include the `SecurityScanAgent` plan, execution trace, and adaptive probes.
 
+The default scenario source is recorded as `data/attack_scenarios.yaml`, relative to the
+repository root, so demo metadata does not include the local checkout path. Explicitly
+supplied scenario file paths are recorded as provided.
+
 No real emails are sent.
 
 No real secrets are read.
