@@ -4,7 +4,7 @@
   "target_profile": {
     "target_name": "demo-vulnerable-rag",
     "target_type": "local_demo_rag_module",
-    "scenario_source": "C:\\Users\\mevas\\Desktop\\pythonProject\\AI_Course\\LLM_Guardian\\data\\attack_scenarios.yaml",
+    "scenario_source": "data/attack_scenarios.yaml",
     "authorization_scope": "local_demo_only",
     "offline_only": true
   },

@@ -514,7 +514,10 @@ class SecurityScanAgent:
         profile: dict[str, str | bool | int] = {
             "target_name": target_name,
             "target_type": "local_demo_rag_module",
-            "scenario_source": str(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH),
+            "scenario_source": (
+                str(scenario_file) if scenario_file is not None
+                else DEFAULT_ATTACK_SCENARIOS_PATH.relative_to(REPOSITORY_ROOT).as_posix()
+            ),
             "authorization_scope": "local_demo_only",
             "offline_only": True,
         }
@@ -537,7 +540,10 @@ class SecurityScanAgent:
         generated_scenario_count: int | None = None,
     ) -> AgentPlan:
         selected_scenario_ids = [scenario.id for scenario in scenarios]
-        resolved_scenario_source = str(scenario_file or DEFAULT_ATTACK_SCENARIOS_PATH)
+        resolved_scenario_source = (
+            str(scenario_file) if scenario_file is not None
+            else DEFAULT_ATTACK_SCENARIOS_PATH.relative_to(REPOSITORY_ROOT).as_posix()
+        )
         return AgentPlan(
             target_name=target_name,
             scenario_count=len(selected_scenario_ids),
